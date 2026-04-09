@@ -65,6 +65,7 @@ describe('provisionAws', () => {
     // After rollback, the ledger should be empty
     expect(ledger.kind === 'aws' && ledger.resources.instance_id).toBeUndefined();
     expect(ledger.kind === 'aws' && ledger.resources.security_group_id).toBeUndefined();
+    expect(ledger.kind === 'aws' && ledger.resources.key_pair_name).toBeUndefined();
 
     // And rollback API calls were made
     expect(ec2Mock.commandCalls(DeleteSecurityGroupCommand)).toHaveLength(1);
