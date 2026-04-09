@@ -7,6 +7,13 @@ import { sshCommand } from './commands/ssh.js';
 import { lsCommand } from './commands/ls.js';
 import { logsCommand } from './commands/logs.js';
 import { initCommand } from './commands/init.js';
+import {
+  secretSet,
+  secretGet,
+  secretRemove,
+  secretList,
+  secretEdit,
+} from './commands/secret.js';
 
 const program = new Command();
 
@@ -129,6 +136,79 @@ program
       await lsCommand({ watch: opts.watch });
     } catch (e) {
       console.error(`hermes-deploy ls: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+const secret = program.command('secret').description('Manage sops-encrypted secrets');
+
+secret
+  .command('set <key> <value>')
+  .option('--name <name>', 'deployment name')
+  .option('--project <path>', 'project directory')
+  .action(async (key, value, opts) => {
+    try {
+      await secretSet({ key, value, name: opts.name, projectPath: opts.project });
+    } catch (e) {
+      console.error(`hermes-deploy secret set: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+secret
+  .command('get <key>')
+  .option('--name <name>', 'deployment name')
+  .option('--project <path>', 'project directory')
+  .action(async (key, opts) => {
+    try {
+      const v = await secretGet({ key, name: opts.name, projectPath: opts.project });
+      if (v === undefined) {
+        console.error(`no such secret: ${key}`);
+        process.exit(1);
+      }
+      console.log(v);
+    } catch (e) {
+      console.error(`hermes-deploy secret get: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+secret
+  .command('rm <key>')
+  .option('--name <name>', 'deployment name')
+  .option('--project <path>', 'project directory')
+  .action(async (key, opts) => {
+    try {
+      await secretRemove({ key, name: opts.name, projectPath: opts.project });
+    } catch (e) {
+      console.error(`hermes-deploy secret rm: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+secret
+  .command('list')
+  .option('--name <name>', 'deployment name')
+  .option('--project <path>', 'project directory')
+  .action(async (opts) => {
+    try {
+      const keys = await secretList({ name: opts.name, projectPath: opts.project });
+      for (const k of keys) console.log(k);
+    } catch (e) {
+      console.error(`hermes-deploy secret list: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+secret
+  .command('edit')
+  .option('--name <name>', 'deployment name')
+  .option('--project <path>', 'project directory')
+  .action(async (opts) => {
+    try {
+      await secretEdit({ name: opts.name, projectPath: opts.project });
+    } catch (e) {
+      console.error(`hermes-deploy secret edit: ${(e as Error).message}`);
       process.exit(1);
     }
   });
