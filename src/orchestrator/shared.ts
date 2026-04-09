@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import {
   generateConfigurationNix,
@@ -9,9 +9,46 @@ import { runNixosRebuild } from '../remote-ops/nixos-rebuild.js';
 import { pollHermesHealth } from '../remote-ops/healthcheck.js';
 import { computeConfigHash } from '../state/hash.js';
 import { StateStore } from '../state/store.js';
+import { HermesTomlError } from '../schema/load.js';
 import type { SshSession } from '../remote-ops/session.js';
 import type { HermesTomlConfig } from '../schema/hermes-toml.js';
 import type { Reporter } from './reporter.js';
+
+/**
+ * Pre-flight check that every file referenced from hermes.toml exists
+ * on disk before any cloud calls happen. Throws HermesTomlError with
+ * a clear message at the missing path. Called from Phase 1 of both
+ * runDeploy and runUpdate so users see "secrets_file not found: ..."
+ * BEFORE we provision an EC2 instance, not 10 minutes later inside
+ * uploadAndRebuild.
+ *
+ * Validates: config_file, secrets_file, every [hermes.documents] value,
+ * and nix_extra (when set).
+ */
+export function validateProjectFiles(projectDir: string, config: HermesTomlConfig): void {
+  const checks: Array<{ field: string; path: string }> = [
+    { field: 'config_file', path: pathResolve(projectDir, config.hermes.config_file) },
+    { field: 'secrets_file', path: pathResolve(projectDir, config.hermes.secrets_file) },
+  ];
+  for (const [docName, relPath] of Object.entries(config.hermes.documents)) {
+    checks.push({
+      field: `documents."${docName}"`,
+      path: pathResolve(projectDir, relPath),
+    });
+  }
+  if (config.hermes.nix_extra) {
+    checks.push({
+      field: 'nix_extra',
+      path: pathResolve(projectDir, config.hermes.nix_extra),
+    });
+  }
+
+  for (const check of checks) {
+    if (!existsSync(check.path)) {
+      throw new HermesTomlError(`${check.field} not found: ${check.path}`);
+    }
+  }
+}
 
 export interface BootstrapArgs {
   session: SshSession;

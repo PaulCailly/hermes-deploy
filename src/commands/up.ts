@@ -28,7 +28,7 @@ export async function upCommand(opts: UpOptions): Promise<void> {
 
   const config = loadHermesToml(join(projectPath, 'hermes.toml'));
   if (config.cloud.provider !== 'aws') {
-    throw new Error(`M1 only supports cloud.provider = "aws" (got "${config.cloud.provider}")`);
+    throw new Error(`hermes-deploy currently supports cloud.provider = "aws" only (got "${config.cloud.provider}"). GCP lands in M4.`);
   }
 
   const paths = getStatePaths();

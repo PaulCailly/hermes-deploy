@@ -1,11 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join, resolve as pathResolve } from 'node:path';
-import { loadHermesToml, HermesTomlError } from '../schema/load.js';
+import { loadHermesToml } from '../schema/load.js';
 import { StateStore } from '../state/store.js';
 import { getStatePaths } from '../state/paths.js';
 import { computeConfigHash } from '../state/hash.js';
 import { createPlainReporter, type Reporter } from './reporter.js';
-import { uploadAndRebuild, recordConfigAndHealthcheck } from './shared.js';
+import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles } from './shared.js';
 import type { CloudProvider, NetworkRules, ResourceLedger } from '../cloud/core.js';
 import type { SshSession } from '../remote-ops/session.js';
 
@@ -57,10 +57,7 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   reporter.phaseStart('validate', `Validating ${opts.deploymentName}`);
   const tomlPath = join(deployment.project_path, 'hermes.toml');
   const config = loadHermesToml(tomlPath);
-  const configFilePath = pathResolve(deployment.project_path, config.hermes.config_file);
-  if (!existsSync(configFilePath)) {
-    throw new HermesTomlError(`config_file not found: ${configFilePath}`);
-  }
+  validateProjectFiles(deployment.project_path, config);
   reporter.phaseDone('validate');
 
   // === Hash short-circuit — no changes means no work ===
