@@ -1,4 +1,5 @@
 import { existsSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { StateStore } from '../state/store.js';
 import { getStatePaths } from '../state/paths.js';
 import type { CloudProvider, ResourceLedger } from '../cloud/core.js';
@@ -28,15 +29,26 @@ export async function runDestroy(opts: DestroyOptions): Promise<void> {
   await opts.provider.destroy(ledger);
   reporter.phaseDone('provision');
 
-  // Remove the per-deployment SSH and age keys from disk so a subsequent
-  // `up` under the same name can regenerate them without tripping the
-  // "key already exists" guard. This mirrors what we're doing to cloud
-  // resources: destroy means destroy completely, not "leave the secrets".
-  for (const path of [
+  // Remove the per-deployment SSH + age keys from the global config dir
+  // AND the project-local sops artifacts (.sops.yaml, secrets.enc.yaml)
+  // so a subsequent `up` under the same name starts from a clean slate.
+  //
+  // Why the sops files too: the sops bootstrap is "create only if missing",
+  // so if we left them they'd remain encrypted against the now-deleted age
+  // key and the next bootstrap would generate a fresh key but keep the
+  // stale file — leaving the next `up` unable to decrypt anything.
+  //
+  // In M1.1 the only content in secrets.enc.yaml is the bootstrap-written
+  // `placeholder: bootstrap` entry, so this cleanup is lossless. M2's
+  // real secret-management flow will need to rethink this policy.
+  const filesToUnlink = [
     deployment.ssh_key_path,
     `${deployment.ssh_key_path}.pub`,
     deployment.age_key_path,
-  ]) {
+    join(deployment.project_path, '.sops.yaml'),
+    join(deployment.project_path, 'secrets.enc.yaml'),
+  ];
+  for (const path of filesToUnlink) {
     if (existsSync(path)) {
       try {
         unlinkSync(path);
