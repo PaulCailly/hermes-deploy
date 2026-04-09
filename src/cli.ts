@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { upCommand } from './commands/up.js';
 import { destroyCommand } from './commands/destroy.js';
+import { statusCommand } from './commands/status.js';
 
 const program = new Command();
 
@@ -34,6 +35,16 @@ program
     }
   });
 
-// status/ssh stubs land in J3-J4
+program
+  .command('status')
+  .argument('[name]', 'deployment name (defaults to ./hermes.toml)')
+  .action(async (name) => {
+    try {
+      await statusCommand({ name });
+    } catch (e) {
+      console.error(`hermes-deploy status: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
 
 program.parseAsync(process.argv);
