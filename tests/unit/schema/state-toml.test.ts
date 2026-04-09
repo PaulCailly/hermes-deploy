@@ -62,4 +62,33 @@ describe('StateTomlSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('rejects a deployment whose cloud field does not match cloud_resources shape', () => {
+    const result = StateTomlSchema.safeParse({
+      schema_version: 1,
+      deployments: {
+        mismatch: {
+          project_path: '/x',
+          cloud: 'aws',
+          region: 'eu-west-3',
+          created_at: '2026-04-09T14:23:11Z',
+          last_deployed_at: '2026-04-09T14:23:11Z',
+          last_config_hash: 'sha256:abc',
+          ssh_key_path: '/x',
+          age_key_path: '/x',
+          health: 'unknown',
+          instance_ip: '0.0.0.0',
+          // GCP-shaped cloud_resources while cloud="aws" — must reject
+          cloud_resources: {
+            instance_name: 'i',
+            firewall_rule_name: 'f',
+            project_id: 'p',
+            zone: 'z',
+            external_ip: '0.0.0.0',
+          },
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
 });

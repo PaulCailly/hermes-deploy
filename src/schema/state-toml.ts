@@ -18,9 +18,8 @@ const GcpResourcesSchema = z.object({
   external_ip: z.string().min(1),
 });
 
-const DeploymentSchema = z.object({
+const BaseDeploymentSchema = z.object({
   project_path: z.string().min(1),
-  cloud: z.enum(['aws', 'gcp']),
   region: z.string().min(1),
   created_at: z.string().datetime(),
   last_deployed_at: z.string().datetime(),
@@ -29,8 +28,18 @@ const DeploymentSchema = z.object({
   age_key_path: z.string().min(1),
   health: HealthSchema,
   instance_ip: z.string().min(1),
-  cloud_resources: z.union([AwsResourcesSchema, GcpResourcesSchema]),
 });
+
+const DeploymentSchema = z.discriminatedUnion('cloud', [
+  BaseDeploymentSchema.extend({
+    cloud: z.literal('aws'),
+    cloud_resources: AwsResourcesSchema,
+  }),
+  BaseDeploymentSchema.extend({
+    cloud: z.literal('gcp'),
+    cloud_resources: GcpResourcesSchema,
+  }),
+]);
 
 export const StateTomlSchema = z.object({
   schema_version: z.literal(1),
