@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { upCommand } from './commands/up.js';
+import { updateCommand } from './commands/update.js';
 import { destroyCommand } from './commands/destroy.js';
 import { statusCommand } from './commands/status.js';
 import { sshCommand } from './commands/ssh.js';
@@ -19,6 +20,19 @@ program
       await upCommand({});
     } catch (e) {
       console.error(`hermes-deploy up: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('update')
+  .argument('[name]', 'deployment name (defaults to the name in ./hermes.toml)')
+  .description('Push config changes to an existing deployment (skips provisioning)')
+  .action(async (name) => {
+    try {
+      await updateCommand({ name });
+    } catch (e) {
+      console.error(`hermes-deploy update: ${(e as Error).message}`);
       process.exit(1);
     }
   });
