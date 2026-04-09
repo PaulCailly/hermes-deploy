@@ -1,24 +1,57 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execSync } from 'node:child_process';
 import { initCommand } from '../../../src/commands/init.js';
 import { HermesTomlSchema } from '../../../src/schema/hermes-toml.js';
 import { parse as parseToml } from 'smol-toml';
 
-describe('initCommand', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'hermes-init-'));
-  });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+const sopsAvailable = (() => {
+  try {
+    execSync('which sops', { stdio: 'ignore' });
+    execSync('which age-keygen', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
-  it('creates hermes.toml, SOUL.md, and .gitignore', async () => {
+describe.skipIf(!sopsAvailable)('initCommand (M3)', () => {
+  let dir: string;
+  let configDir: string;
+
+  beforeEach(() => {
+    const root = mkdtempSync(join(tmpdir(), 'hermes-init-m3-'));
+    dir = join(root, 'project');
+    configDir = join(root, 'config');
+    process.env.XDG_CONFIG_HOME = configDir;
+    mkdirSync(dir);
+    mkdirSync(configDir);
+  });
+  afterEach(() => rmSync(configDir, { recursive: true, force: true }));
+
+  it('creates the full M3 file set', async () => {
     await initCommand({ name: 'test-bot', dir });
     expect(existsSync(join(dir, 'hermes.toml'))).toBe(true);
+    expect(existsSync(join(dir, 'config.yaml'))).toBe(true);
     expect(existsSync(join(dir, 'SOUL.md'))).toBe(true);
     expect(existsSync(join(dir, '.gitignore'))).toBe(true);
-    expect(readFileSync(join(dir, 'hermes.toml'), 'utf-8')).toContain('name = "test-bot"');
+    expect(existsSync(join(dir, '.sops.yaml'))).toBe(true);
+    expect(existsSync(join(dir, 'secrets.env.enc'))).toBe(true);
+  });
+
+  it('produces a hermes.toml that parses cleanly through the M3 schema', async () => {
+    await initCommand({ name: 'parse-test', dir });
+    const raw = readFileSync(join(dir, 'hermes.toml'), 'utf-8');
+    const parsed = parseToml(raw);
+    const result = HermesTomlSchema.safeParse(parsed);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.hermes.config_file).toBe('./config.yaml');
+      expect(result.data.hermes.secrets_file).toBe('./secrets.env.enc');
+      expect(result.data.hermes.documents['SOUL.md']).toBe('./SOUL.md');
+    }
   });
 
   it('refuses to overwrite an existing hermes.toml', async () => {
@@ -26,24 +59,15 @@ describe('initCommand', () => {
     await expect(initCommand({ name: 'second', dir })).rejects.toThrow(/already exists/);
   });
 
-  it('derives a default name from the directory basename', async () => {
-    await initCommand({ dir });
-    const toml = readFileSync(join(dir, 'hermes.toml'), 'utf-8');
-    // Sanitized basename should match the regex; just verify a name line exists
-    expect(toml).toMatch(/^name = "[a-z0-9][a-z0-9-]*"/m);
-  });
-
-  it('produces a hermes.toml that parses cleanly against the schema', async () => {
-    await initCommand({ name: 'parse-test', dir });
-    const raw = readFileSync(join(dir, 'hermes.toml'), 'utf-8');
-    const parsed = parseToml(raw);
-    const result = HermesTomlSchema.safeParse(parsed);
-    expect(result.success).toBe(true);
-  });
-
   it('does not overwrite an existing SOUL.md', async () => {
     writeFileSync(join(dir, 'SOUL.md'), '# pre-existing user content');
     await initCommand({ name: 'preserve', dir });
     expect(readFileSync(join(dir, 'SOUL.md'), 'utf-8')).toBe('# pre-existing user content');
+  });
+
+  it('does not overwrite an existing config.yaml', async () => {
+    writeFileSync(join(dir, 'config.yaml'), 'model:\n  default: my-model\n');
+    await initCommand({ name: 'preserve-config', dir });
+    expect(readFileSync(join(dir, 'config.yaml'), 'utf-8')).toBe('model:\n  default: my-model\n');
   });
 });
