@@ -24,6 +24,7 @@ function healthySession(): SshSession {
   return {
     exec: vi.fn(async () => ({ exitCode: 0, stdout: 'active', stderr: '' })),
     execStream: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+    execStreamUntil: vi.fn(async () => ({ aborted: false, exitCode: 0 })),
     uploadFile: vi.fn(async () => {}),
     dispose: vi.fn(async () => {}),
   };

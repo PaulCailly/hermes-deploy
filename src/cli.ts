@@ -5,6 +5,7 @@ import { destroyCommand } from './commands/destroy.js';
 import { statusCommand } from './commands/status.js';
 import { sshCommand } from './commands/ssh.js';
 import { lsCommand } from './commands/ls.js';
+import { logsCommand } from './commands/logs.js';
 
 const program = new Command();
 
@@ -86,6 +87,21 @@ program
       await sshCommand({ name: opts.name ?? positionalName, projectPath: opts.project });
     } catch (e) {
       console.error(`hermes-deploy ssh: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('logs')
+  .argument('[name]', 'deployment name (defaults to ./hermes.toml)')
+  .option('--name <name>', 'deployment name (use instead of cwd lookup)')
+  .option('--project <path>', 'project directory (use instead of cwd lookup)')
+  .description('Stream the remote hermes-agent service log until Ctrl-C')
+  .action(async (positionalName, opts) => {
+    try {
+      await logsCommand({ name: opts.name ?? positionalName, projectPath: opts.project });
+    } catch (e) {
+      console.error(`hermes-deploy logs: ${(e as Error).message}`);
       process.exit(1);
     }
   });
