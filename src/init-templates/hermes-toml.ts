@@ -1,12 +1,7 @@
-/**
- * The starter hermes.toml that `hermes-deploy init` writes. Kept as a
- * function so the deployment name can be parameterized from the
- * directory name (or --name flag).
- */
 export const HERMES_TOML_TEMPLATE = (name: string) => `name = "${name}"
 
 [cloud]
-provider = "aws"        # "aws" (M2) or "gcp" (coming in M3)
+provider = "aws"        # "aws" (M2/M3) or "gcp" (coming in M4)
 profile  = "default"     # AWS profile name or GCP project id
 region   = "eu-west-3"
 size     = "large"       # "small" | "medium" | "large"
@@ -23,16 +18,17 @@ ssh_allowed_from = "auto"   # "auto" = your current public IP, or a CIDR
 inbound_ports    = []        # opt in: e.g. [443] for a webhook port
 
 [hermes]
-model        = "anthropic/claude-sonnet-4-5"
-soul         = "./SOUL.md"
-secrets_file = "./secrets.enc.yaml"
+config_file  = "./config.yaml"      # the agent's runtime config (uploaded verbatim)
+secrets_file = "./secrets.env.enc"  # sops-encrypted dotenv (managed via \`secret\` subcommands)
 
-# Discord/Telegram platform wiring is intentionally minimal in M2 — the
-# hermes.toml schema redesign in M3 will properly map these onto the
-# upstream module's services.hermes-agent.settings options.
-[hermes.platforms.discord]
-enabled   = true
-token_key = "discord_bot_token"
+# Optional: documents the agent reads at startup (e.g. SOUL.md). The keys
+# are filenames on the box; the values are paths in this project dir.
+[hermes.documents]
+"SOUL.md" = "./SOUL.md"
+
+# Optional: non-secret environment variables for the agent process.
+# [hermes.environment]
+# LOG_LEVEL = "info"
 
 # Optional: faster first deploy via a Cachix binary cache. Sign up at
 # cachix.org, create a cache, and paste the public key from its
@@ -41,4 +37,9 @@ token_key = "discord_bot_token"
 # [hermes.cachix]
 # name       = "your-cache-name"
 # public_key = "your-cache-name.cachix.org-1:xxxxx"
+
+# Optional escape hatch: a Nix file with extra services.hermes-agent.*
+# settings or whole-system NixOS config. Imported by the generated
+# flake.nix when present.
+# nix_extra = "./hermes.extra.nix"
 `;
