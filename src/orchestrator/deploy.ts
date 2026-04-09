@@ -4,7 +4,7 @@ import { loadHermesToml, HermesTomlError } from '../schema/load.js';
 import { StateStore } from '../state/store.js';
 import { getStatePaths } from '../state/paths.js';
 import { computeConfigHash } from '../state/hash.js';
-import { generateHermesNix, generateConfigurationNix } from '../nix-gen/generate.js';
+import { generateHermesNix, generateConfigurationNix, generateFlakeNix } from '../nix-gen/generate.js';
 import { runNixosRebuild } from '../remote-ops/nixos-rebuild.js';
 import { pollHermesHealth } from '../remote-ops/healthcheck.js';
 import type { CloudProvider, ProvisionSpec, ResourceLedger } from '../cloud/core.js';
@@ -133,6 +133,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   const privateKeyContent = readFileSync(sshKeyPath, 'utf-8');
   const session = await opts.sessionFactory(instance.publicIp, privateKeyContent);
   try {
+    const flakeNix = generateFlakeNix();
     const configurationNix = generateConfigurationNix();
     const hermesNix = generateHermesNix(config);
     const ageKeyContent = readFileSync(ageKeyPath, 'utf-8');
@@ -140,6 +141,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
       pathResolve(opts.projectDir, config.hermes.secrets_file),
     );
 
+    await session.uploadFile('/etc/nixos/flake.nix', flakeNix);
     await session.uploadFile('/etc/nixos/configuration.nix', configurationNix);
     await session.uploadFile('/etc/nixos/hermes.nix', hermesNix);
     await session.uploadFile('/etc/nixos/secrets.enc.yaml', secretsContent);
