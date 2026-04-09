@@ -1,0 +1,29 @@
+name = "test-m3-full"
+
+[cloud]
+provider = "aws"
+profile = "acme"
+region = "eu-west-3"
+size = "large"
+disk_gb = 50
+
+[network]
+ssh_allowed_from = "auto"
+inbound_ports = [443, 8080]
+
+[hermes]
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"
+nix_extra = "./hermes.extra.nix"
+
+[hermes.documents]
+"SOUL.md" = "./SOUL.md"
+"persona.md" = "./behaviors/persona.md"
+
+[hermes.environment]
+LOG_LEVEL = "debug"
+RUST_BACKTRACE = "1"
+
+[hermes.cachix]
+name = "acme-deploys"
+public_key = "acme-deploys.cachix.org-1:dGhpc2lzYWZha2VrZXlmb3JzbW9rZXRlc3Rpbmdvbmx5UU9PMA=="

@@ -1,0 +1,11 @@
+name = "test-m3-minimal"
+
+[cloud]
+provider = "aws"
+profile = "default"
+region = "eu-west-3"
+size = "small"
+
+[hermes]
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"

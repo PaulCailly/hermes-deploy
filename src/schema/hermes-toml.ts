@@ -10,11 +10,9 @@ const CloudSchema = z
     region: z.string().min(1),
     zone: z.string().min(1).optional(),
     size: SizeSchema,
-    // Root disk size in GB. NixOS community AMIs default to ~5 GB, which
-    // is too small to build the hermes-agent Python closure from source
-    // (first deploy OOMs the disk on pynacl/pyproject wheels). 30 GB is
-    // a safe floor with headroom; raise via hermes.toml for heavier
-    // deployments.
+    // Root disk size in GB. NixOS community AMIs default to ~5 GB,
+    // which is too small to build the hermes-agent Python closure
+    // from source. 30 GB is a safe floor; raise for heavier deployments.
     disk_gb: z.number().int().min(8).max(500).default(30),
   })
   .refine(c => c.provider !== 'gcp' || !!c.zone, {
@@ -27,32 +25,8 @@ const NetworkSchema = z.object({
   inbound_ports: z.array(z.number().int().min(1).max(65535)).default([]),
 });
 
-const PlatformDiscordSchema = z.object({
-  enabled: z.boolean(),
-  token_key: z.string().min(1).optional(),
-});
-
-const PlatformTelegramSchema = z.object({
-  enabled: z.boolean(),
-  token_key: z.string().min(1).optional(),
-});
-
-const McpServerSchema = z.object({
-  name: z.string().min(1),
-  command: z.string().min(1),
-  args: z.array(z.string()).default([]),
-  env_keys: z.array(z.string()).default([]),
-});
-
-const NixExtraSchema = z.object({
-  file: z.string().min(1),
-});
-
-// Optional Cachix binary cache for substituting hermes-agent's closure
-// instead of building it from source. When set, configuration.nix on the
-// box adds <name>.cachix.org as a substituter and trusts <public_key>.
-// First deploy still has to build (and ideally push to the cache); every
-// subsequent first-deploy of the same hermes-agent rev pulls from cache.
+// [hermes.cachix] — optional binary substituter for the hermes-agent
+// closure. Unchanged from M2.
 const CachixSchema = z.object({
   name: z
     .string()
@@ -66,16 +40,16 @@ const CachixSchema = z.object({
   }),
 });
 
+// [hermes] — pure infrastructure pointers + escape hatch.
+// hermes-deploy intentionally does NOT model the agent's config.yaml
+// schema. The user provides config.yaml directly; we upload it and
+// point services.hermes-agent.configFile at it.
 const HermesSchema = z.object({
-  model: z.string().min(1),
-  soul: z.string().min(1),
+  config_file: z.string().min(1),
   secrets_file: z.string().min(1),
-  platforms: z.object({
-    discord: PlatformDiscordSchema.optional(),
-    telegram: PlatformTelegramSchema.optional(),
-  }),
-  mcp_servers: z.array(McpServerSchema).default([]),
-  nix_extra: NixExtraSchema.optional(),
+  nix_extra: z.string().min(1).optional(),
+  documents: z.record(z.string().min(1), z.string().min(1)).default({}),
+  environment: z.record(z.string().min(1), z.string()).default({}),
   cachix: CachixSchema.optional(),
 });
 
