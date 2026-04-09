@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectPublicIp } from '../../../../src/cloud/aws/public-ip.js';
+import { detectPublicIp } from '../../../src/utils/public-ip.js';
 
 describe('detectPublicIp', () => {
   it('returns a CIDR ending in /32 when given a public IP', async () => {

@@ -1,7 +1,7 @@
 import { findUp } from './find-project.js';
 import { loadHermesToml } from '../schema/load.js';
 import { runDestroy } from '../orchestrator/destroy.js';
-import { AwsProvider } from '../cloud/aws/provider.js';
+import { createCloudProvider } from '../cloud/factory.js';
 import { getStatePaths } from '../state/paths.js';
 import { StateStore } from '../state/store.js';
 import { createInterface } from 'node:readline/promises';
@@ -33,7 +33,8 @@ export async function destroyCommand(opts: { name?: string; yes?: boolean }): Pr
     }
   }
 
-  const provider = new AwsProvider({
+  const provider = createCloudProvider({
+    provider: deployment.cloud as 'aws' | 'gcp',
     region: deployment.region,
     imageCacheFile: paths.imageCacheFile,
   });

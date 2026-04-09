@@ -22,7 +22,7 @@ export default [
     },
   },
   {
-    files: ['src/cloud/aws/**/*.ts', 'src/cloud/gcp/**/*.ts', 'tests/**/cloud/**/*.ts'],
+    files: ['src/cloud/aws/**/*.ts', 'src/cloud/gcp/**/*.ts', 'src/cloud/factory.ts', 'tests/**/cloud/**/*.ts'],
     rules: { 'no-restricted-imports': 'off' },
   },
 ];

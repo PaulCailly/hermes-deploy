@@ -1,6 +1,6 @@
 import { findUp } from './find-project.js';
 import { loadHermesToml } from '../schema/load.js';
-import { AwsProvider } from '../cloud/aws/provider.js';
+import { createCloudProvider } from '../cloud/factory.js';
 import { getStatePaths } from '../state/paths.js';
 import { StateStore } from '../state/store.js';
 
@@ -22,7 +22,8 @@ export async function statusCommand(opts: { name?: string }): Promise<void> {
     return;
   }
 
-  const provider = new AwsProvider({
+  const provider = createCloudProvider({
+    provider: deployment.cloud as 'aws' | 'gcp',
     region: deployment.region,
     imageCacheFile: paths.imageCacheFile,
   });
