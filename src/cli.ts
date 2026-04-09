@@ -6,6 +6,7 @@ import { statusCommand } from './commands/status.js';
 import { sshCommand } from './commands/ssh.js';
 import { lsCommand } from './commands/ls.js';
 import { logsCommand } from './commands/logs.js';
+import { initCommand } from './commands/init.js';
 
 const program = new Command();
 
@@ -13,6 +14,19 @@ program
   .name('hermes-deploy')
   .description('Deploy hermes-agent to AWS or GCP')
   .version('0.2.0-m2');
+
+program
+  .command('init')
+  .option('--name <name>', 'deployment name (defaults to sanitized directory name)')
+  .description('Scaffold a new hermes-deploy project in the current directory')
+  .action(async (opts) => {
+    try {
+      await initCommand({ name: opts.name });
+    } catch (e) {
+      console.error(`hermes-deploy init: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
 
 program
   .command('up')
