@@ -33,7 +33,7 @@ export const FLAKE_NIX = `{
         ./hermes.nix
         sops-nix.nixosModules.sops
         hermes-agent.nixosModules.default
-      ];
+      ] ++ nixpkgs.lib.optional (builtins.pathExists ./hermes.extra.nix) ./hermes.extra.nix;
     };
   };
 }

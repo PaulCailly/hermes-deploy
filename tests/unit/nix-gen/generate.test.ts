@@ -106,4 +106,11 @@ describe('generateFlakeNix', () => {
     expect(out).toContain('hermes-agent.nixosModules.default');
     expect(out).toContain('sops-nix.nixosModules.sops');
   });
+
+  it('conditionally includes hermes.extra.nix via pathExists', () => {
+    const out = generateFlakeNix();
+    expect(out).toContain('builtins.pathExists ./hermes.extra.nix');
+    expect(out).toContain('nixpkgs.lib.optional');
+    expect(out).toContain('./hermes.extra.nix');
+  });
 });
