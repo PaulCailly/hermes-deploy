@@ -143,6 +143,10 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
     await session.uploadFile('/etc/nixos/configuration.nix', configurationNix);
     await session.uploadFile('/etc/nixos/hermes.nix', hermesNix);
     await session.uploadFile('/etc/nixos/secrets.enc.yaml', secretsContent);
+    // sops-nix creates /var/lib/sops-nix on activation, but we need the dir
+    // to exist before SFTP can drop the age key there on the very first
+    // rebuild. mkdir -p is idempotent on subsequent deploys.
+    await session.exec('mkdir -p /var/lib/sops-nix');
     await session.uploadFile('/var/lib/sops-nix/age.key', ageKeyContent, 0o600);
 
     const rebuild = await runNixosRebuild(session, (_s, line) => reporter.log(line));
