@@ -32,6 +32,7 @@ export function generateHermesNix(config: HermesTomlConfig): string {
   lines.push('{ config, pkgs, lib, ... }:');
   lines.push('{');
   lines.push('  services.hermes-agent = {');
+  lines.push('    enable = true;');
   lines.push('    settings.model.default = "' + config.hermes.model + '";');
   lines.push('  };');
 
