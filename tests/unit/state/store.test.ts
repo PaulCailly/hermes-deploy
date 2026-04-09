@@ -50,7 +50,7 @@ describe('StateStore', () => {
     await expect(store.read()).rejects.toThrow(/schema_version/);
   });
 
-  it('serializes concurrent updates via the lock file', async () => {
+  it('serializes concurrent updates via the lock file (no interleaving)', async () => {
     const order: number[] = [];
     const a = store.update(async s => {
       order.push(1);
@@ -64,8 +64,12 @@ describe('StateStore', () => {
       order.push(4);
     });
     await Promise.all([a, b]);
-    // a's [1,2] must come fully before b's [3,4]
-    expect(order.indexOf(2)).toBeLessThan(order.indexOf(3));
+    // The lockfile must serialize the two updates so neither interleaves with
+    // the other. We don't require a FIFO ordering — proper-lockfile doesn't
+    // guarantee it — only that each pair of (start, end) markers is adjacent.
+    expect(Math.abs(order.indexOf(1) - order.indexOf(2))).toBe(1);
+    expect(Math.abs(order.indexOf(3) - order.indexOf(4))).toBe(1);
+    expect(order).toHaveLength(4);
   });
 });
 
