@@ -49,14 +49,18 @@ describe('generateHermesNix', () => {
 });
 
 describe('generateConfigurationNix', () => {
-  const baseConfig = loadHermesToml(join(fixturesDir, 'hermes-toml/minimal.toml'));
+  const baseConfig = loadHermesToml(join(fixturesDir, 'hermes-toml/m3-minimal.toml'));
 
-  it('imports amazon-image, enables flakes, and declares the sops config', () => {
+  it('imports amazon-image, enables flakes, and declares the M3 dotenv sops secret', () => {
     const out = generateConfigurationNix(baseConfig);
     expect(out).toContain('imports = [');
     expect(out).toContain('virtualisation/amazon-image.nix');
     expect(out).toContain('experimental-features');
-    expect(out).toContain('sops');
+    expect(out).toContain('defaultSopsFile = ./secrets.env.enc;');
+    expect(out).toContain('secrets."hermes-env"');
+    expect(out).toContain('format = "dotenv"');
+    expect(out).not.toContain('secrets."placeholder"');
+    expect(out).not.toContain('secrets.enc.yaml');
     expect(out).toContain('system.stateVersion = "25.11"');
   });
 
