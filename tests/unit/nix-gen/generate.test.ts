@@ -9,40 +9,33 @@ import { loadHermesToml } from '../../../src/schema/load.js';
 
 const fixturesDir = join(__dirname, '../../fixtures');
 
-describe('generateHermesNix', () => {
-  it('matches the snapshot for minimal.toml', async () => {
-    const config = loadHermesToml(join(fixturesDir, 'hermes-toml/minimal.toml'));
+describe('generateHermesNix (M3)', () => {
+  it('matches the snapshot for the M3 minimal config', async () => {
+    const config = loadHermesToml(join(fixturesDir, 'hermes-toml/m3-minimal.toml'));
     const got = generateHermesNix(config);
     await expect(got).toMatchFileSnapshot(
-      join(fixturesDir, 'nix-snapshots/minimal.hermes.nix'),
+      join(fixturesDir, 'nix-snapshots/m3-minimal.hermes.nix'),
     );
   });
 
-  it('matches the snapshot for full.toml', async () => {
-    const config = loadHermesToml(join(fixturesDir, 'hermes-toml/full.toml'));
+  it('matches the snapshot for the M3 full config', async () => {
+    const config = loadHermesToml(join(fixturesDir, 'hermes-toml/m3-full.toml'));
     const got = generateHermesNix(config);
     await expect(got).toMatchFileSnapshot(
-      join(fixturesDir, 'nix-snapshots/full.hermes.nix'),
+      join(fixturesDir, 'nix-snapshots/m3-full.hermes.nix'),
     );
   });
 
-  it('throws on a nix_extra path that contains characters invalid in a Nix literal', () => {
-    // nix_extra is the only remaining place generateHermesNix emits a path
-    // literal (M1's soul/secrets_file paths were dropped because they
-    // weren't real upstream options). The validation rejects spaces and
-    // other non-[A-Za-z0-9._+-/] characters so a malformed path doesn't
-    // silently produce broken Nix.
+  it('throws on a documents key with characters invalid in a Nix path literal', () => {
     expect(() => generateHermesNix({
       name: 'x',
       cloud: { provider: 'aws', profile: 'default', region: 'eu-west-3', size: 'small', disk_gb: 30 },
       network: { ssh_allowed_from: 'auto', inbound_ports: [] },
       hermes: {
-        model: 'm',
-        soul: './SOUL.md',
-        secrets_file: './secrets.enc.yaml',
-        platforms: { discord: { enabled: true, token_key: 'k' } },
-        mcp_servers: [],
-        nix_extra: { file: './path with space/extra.nix' },
+        config_file: './config.yaml',
+        secrets_file: './secrets.env.enc',
+        documents: { 'bad name.md': './ok.md' },
+        environment: {},
       },
     })).toThrow(/invalid in a Nix path literal/);
   });
