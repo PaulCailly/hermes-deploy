@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import type { ImageRef } from '../core.js';
 
 const NIXOS_OWNER_ID = '427812963091'; // NixOS Foundation
-const NIXOS_NAME_PATTERN = 'nixos/24.05*-x86_64-linux';
+const NIXOS_NAME_PATTERN = 'nixos/25.11*-x86_64-linux';
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 interface CachedImage {
