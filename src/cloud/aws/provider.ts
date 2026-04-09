@@ -5,11 +5,13 @@ import type {
   Instance,
   InstanceStatus,
   Location,
+  NetworkRules,
   ProvisionSpec,
   ResourceLedger,
 } from '../core.js';
 import { resolveNixosAmi } from './images.js';
 import { provisionAws } from './provision.js';
+import { reconcileNetworkAws } from './reconcile-network.js';
 import { destroyAws } from './destroy.js';
 import { statusAws } from './status.js';
 
@@ -34,6 +36,10 @@ export class AwsProvider implements CloudProvider {
 
   provision(spec: ProvisionSpec, ledger: ResourceLedger): Promise<Instance> {
     return provisionAws(this.ec2, spec, ledger);
+  }
+
+  reconcileNetwork(ledger: ResourceLedger, rules: NetworkRules): Promise<void> {
+    return reconcileNetworkAws(this.ec2, ledger, rules);
   }
 
   destroy(ledger: ResourceLedger): Promise<void> {

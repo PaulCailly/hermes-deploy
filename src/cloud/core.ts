@@ -45,6 +45,13 @@ export interface CloudProvider {
   readonly name: 'aws' | 'gcp';
   resolveNixosImage(loc: Location): Promise<ImageRef>;
   provision(spec: ProvisionSpec, ledger: ResourceLedger): Promise<Instance>;
+  /**
+   * Apply network rule changes in place, without recreating the instance.
+   * Adds rules that aren't currently on the SG/firewall, removes rules that
+   * are no longer required. Idempotent — safe to call when the rules
+   * already match.
+   */
+  reconcileNetwork(ledger: ResourceLedger, rules: NetworkRules): Promise<void>;
   destroy(ledger: ResourceLedger): Promise<void>;
   status(ledger: ResourceLedger): Promise<InstanceStatus>;
 }

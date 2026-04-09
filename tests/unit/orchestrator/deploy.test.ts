@@ -22,6 +22,7 @@ function fakeProvider(): CloudProvider {
       }
       return { publicIp: '203.0.113.42', sshUser: 'root' };
     }),
+    reconcileNetwork: vi.fn(async () => {}),
     destroy: vi.fn(async () => {}),
     status: vi.fn(async () => ({ state: 'running' as const, publicIp: '203.0.113.42' })),
   };
