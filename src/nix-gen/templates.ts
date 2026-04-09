@@ -69,6 +69,17 @@ export const CONFIGURATION_NIX = `{ config, pkgs, lib, modulesPath, ... }:
   sops = {
     defaultSopsFile = ./secrets.enc.yaml;
     age.keyFile = "/var/lib/sops-nix/age.key";
+    # Placeholder secret: hermes-agent's nixosModule hardcodes an activation
+    # dep on "setupSecrets", which sops-nix only registers when at least one
+    # sops.secrets.* entry exists. Without this declaration nixos-rebuild
+    # fails with 'attribute setupSecrets missing' during activation-script
+    # dep resolution. The sops bootstrap already writes \`placeholder: bootstrap\`
+    # into secrets.enc.yaml, so this decrypts cleanly at activation. Nothing
+    # reads /run/secrets/placeholder — it's pure plumbing to satisfy upstream.
+    # M2 will redesign the secrets pipeline with real secret declarations
+    # driven by the hermes.toml schema, and this placeholder can go away.
+    # See: github.com/NousResearch/hermes-agent/nix/nixosModules.nix:572
+    secrets."placeholder" = { };
   };
 }
 `;
