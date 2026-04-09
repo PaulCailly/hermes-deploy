@@ -62,4 +62,8 @@ describe('key subcommands', () => {
     const p = await keyPath({ name: 'alpha' });
     expect(p).toBe(join(configDir, 'hermes-deploy/age_keys/alpha'));
   });
+
+  it('throws when asked for the path of a missing key', async () => {
+    await expect(keyPath({ name: 'never-existed' })).rejects.toThrow(/no age key/);
+  });
 });

@@ -42,8 +42,14 @@ export async function keyImport(opts: { name: string; path: string }): Promise<s
 
 /**
  * Print the on-disk path of a deployment's age key. Useful for piping
- * to other sops commands or just locating the file for backup.
+ * to other sops commands or just locating the file for backup. Errors
+ * if the key doesn't exist — symmetric with `keyExport` so users get
+ * a clear error instead of a misleading path that points at nothing.
  */
 export async function keyPath(opts: { name: string }): Promise<string> {
-  return getStatePaths().ageKeyForDeployment(opts.name);
+  const keyPathStr = getStatePaths().ageKeyForDeployment(opts.name);
+  if (!existsSync(keyPathStr)) {
+    throw new Error(`no age key for deployment "${opts.name}" at ${keyPathStr}`);
+  }
+  return keyPathStr;
 }
