@@ -42,7 +42,7 @@ const DeploymentSchema = z.discriminatedUnion('cloud', [
 ]);
 
 export const StateTomlSchema = z.object({
-  schema_version: z.literal(1),
+  schema_version: z.literal(2),
   deployments: z.record(z.string(), DeploymentSchema),
 });
 

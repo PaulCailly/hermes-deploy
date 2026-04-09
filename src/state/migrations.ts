@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 /**
  * Forward migration functions keyed by TARGET version.
@@ -51,6 +51,16 @@ const migrations: Record<number, (input: unknown) => unknown> = {
     if (src.schema_version === 1) return src;
 
     throw new Error(`cannot migrate to v1 from unrecognized input shape`);
+  },
+  2: (input: unknown) => {
+    // M3 schema migration: the state file shape itself is unchanged
+    // between v1 and v2. Only the user-facing hermes.toml shape changed.
+    // The deployment metadata (cloud_resources, ssh_key_path, etc.) is
+    // identical, so this migration just bumps the schema_version field.
+    // User-file migration (hermes.toml v1 → v2) is manual; see
+    // docs/migrating-from-m2.md.
+    const v1 = input as { schema_version: number; deployments: Record<string, unknown> };
+    return { ...v1, schema_version: 2 };
   },
 };
 
