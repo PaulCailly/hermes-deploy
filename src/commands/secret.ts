@@ -101,8 +101,18 @@ export async function secretList(opts: SecretRefOptions): Promise<string[]> {
 }
 
 export async function secretEdit(opts: SecretRefOptions): Promise<void> {
+  // sops opens $EDITOR (vim by default) which immediately panics on a
+  // non-interactive stdin and floods stderr with terminal escape codes
+  // before exiting non-zero. Refuse early with a clear message instead
+  // of letting that happen — `secret set` is the right answer in
+  // pipelines and CI.
+  if (!process.stdout.isTTY) {
+    throw new Error(
+      'secret edit requires an interactive terminal. Use `secret set <key> <value>` from non-TTY contexts.',
+    );
+  }
+
   const ctx = await getContext(opts.name, opts.projectPath);
-  // Shell out interactively — sops opens $EDITOR for the user
   execFileSync('sops', [ctx.secretsPath], {
     stdio: 'inherit',
     env: { ...process.env, SOPS_AGE_KEY_FILE: ctx.ageKeyPath },
