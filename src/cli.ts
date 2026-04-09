@@ -10,14 +10,17 @@ const program = new Command();
 program
   .name('hermes-deploy')
   .description('Deploy hermes-agent to AWS or GCP')
-  .version('0.1.0-m1');
+  .version('0.2.0-m2');
 
 program
   .command('up')
-  .description('Provision and configure the deployment defined by ./hermes.toml')
-  .action(async () => {
+  .argument('[name]', 'deployment name (defaults to the name in ./hermes.toml)')
+  .option('--name <name>', 'deployment name (use instead of cwd lookup)')
+  .option('--project <path>', 'project directory (use instead of cwd lookup)')
+  .description('Provision and configure the deployment defined by hermes.toml')
+  .action(async (positionalName, opts) => {
     try {
-      await upCommand({});
+      await upCommand({ name: opts.name ?? positionalName, projectPath: opts.project });
     } catch (e) {
       console.error(`hermes-deploy up: ${(e as Error).message}`);
       process.exit(1);
@@ -27,10 +30,12 @@ program
 program
   .command('update')
   .argument('[name]', 'deployment name (defaults to the name in ./hermes.toml)')
+  .option('--name <name>', 'deployment name (use instead of cwd lookup)')
+  .option('--project <path>', 'project directory (use instead of cwd lookup)')
   .description('Push config changes to an existing deployment (skips provisioning)')
-  .action(async (name) => {
+  .action(async (positionalName, opts) => {
     try {
-      await updateCommand({ name });
+      await updateCommand({ name: opts.name ?? positionalName, projectPath: opts.project });
     } catch (e) {
       console.error(`hermes-deploy update: ${(e as Error).message}`);
       process.exit(1);
@@ -40,10 +45,16 @@ program
 program
   .command('destroy')
   .argument('[name]', 'deployment name (defaults to the name in ./hermes.toml)')
+  .option('--name <name>', 'deployment name (use instead of cwd lookup)')
+  .option('--project <path>', 'project directory (use instead of cwd lookup)')
   .option('--yes', 'skip confirmation prompt')
-  .action(async (name, opts) => {
+  .action(async (positionalName, opts) => {
     try {
-      await destroyCommand({ name, yes: opts.yes });
+      await destroyCommand({
+        name: opts.name ?? positionalName,
+        projectPath: opts.project,
+        yes: opts.yes,
+      });
     } catch (e) {
       console.error(`hermes-deploy destroy: ${(e as Error).message}`);
       process.exit(1);
@@ -53,9 +64,11 @@ program
 program
   .command('status')
   .argument('[name]', 'deployment name (defaults to ./hermes.toml)')
-  .action(async (name) => {
+  .option('--name <name>', 'deployment name (use instead of cwd lookup)')
+  .option('--project <path>', 'project directory (use instead of cwd lookup)')
+  .action(async (positionalName, opts) => {
     try {
-      await statusCommand({ name });
+      await statusCommand({ name: opts.name ?? positionalName, projectPath: opts.project });
     } catch (e) {
       console.error(`hermes-deploy status: ${(e as Error).message}`);
       process.exit(1);
@@ -65,9 +78,11 @@ program
 program
   .command('ssh')
   .argument('[name]', 'deployment name (defaults to ./hermes.toml)')
-  .action(async (name) => {
+  .option('--name <name>', 'deployment name (use instead of cwd lookup)')
+  .option('--project <path>', 'project directory (use instead of cwd lookup)')
+  .action(async (positionalName, opts) => {
     try {
-      await sshCommand({ name });
+      await sshCommand({ name: opts.name ?? positionalName, projectPath: opts.project });
     } catch (e) {
       console.error(`hermes-deploy ssh: ${(e as Error).message}`);
       process.exit(1);

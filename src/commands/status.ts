@@ -1,21 +1,23 @@
-import { findUp } from './find-project.js';
-import { loadHermesToml } from '../schema/load.js';
+import { resolveDeployment } from './resolve.js';
 import { createCloudProvider } from '../cloud/factory.js';
 import { getStatePaths } from '../state/paths.js';
 import { StateStore } from '../state/store.js';
 
-export async function statusCommand(opts: { name?: string }): Promise<void> {
+export interface StatusOptions {
+  name?: string;
+  projectPath?: string;
+}
+
+export async function statusCommand(opts: StatusOptions): Promise<void> {
+  const { name } = await resolveDeployment({
+    name: opts.name,
+    projectPath: opts.projectPath,
+    cwd: process.cwd(),
+  });
+
   const paths = getStatePaths();
   const store = new StateStore(paths);
   const state = await store.read();
-
-  let name = opts.name;
-  if (!name) {
-    const projectDir = findUp(process.cwd(), 'hermes.toml');
-    if (!projectDir) throw new Error('no name given and no hermes.toml in cwd');
-    name = loadHermesToml(`${projectDir}/hermes.toml`).name;
-  }
-
   const deployment = state.deployments[name];
   if (!deployment) {
     console.log(`No deployment named "${name}" found in state.`);

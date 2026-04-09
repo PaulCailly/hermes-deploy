@@ -1,21 +1,23 @@
 import { spawn } from 'node:child_process';
-import { findUp } from './find-project.js';
-import { loadHermesToml } from '../schema/load.js';
+import { resolveDeployment } from './resolve.js';
 import { getStatePaths } from '../state/paths.js';
 import { StateStore } from '../state/store.js';
 
-export async function sshCommand(opts: { name?: string }): Promise<void> {
+export interface SshOptions {
+  name?: string;
+  projectPath?: string;
+}
+
+export async function sshCommand(opts: SshOptions): Promise<void> {
+  const { name } = await resolveDeployment({
+    name: opts.name,
+    projectPath: opts.projectPath,
+    cwd: process.cwd(),
+  });
+
   const paths = getStatePaths();
   const store = new StateStore(paths);
   const state = await store.read();
-
-  let name = opts.name;
-  if (!name) {
-    const projectDir = findUp(process.cwd(), 'hermes.toml');
-    if (!projectDir) throw new Error('no name given and no hermes.toml in cwd');
-    name = loadHermesToml(`${projectDir}/hermes.toml`).name;
-  }
-
   const deployment = state.deployments[name];
   if (!deployment) throw new Error(`deployment "${name}" not found in state`);
 
