@@ -1,0 +1,108 @@
+import { readFileSync } from 'node:fs';
+import { resolve as pathResolve } from 'node:path';
+import {
+  generateConfigurationNix,
+  generateFlakeNix,
+  generateHermesNix,
+} from '../nix-gen/generate.js';
+import { runNixosRebuild } from '../remote-ops/nixos-rebuild.js';
+import { pollHermesHealth } from '../remote-ops/healthcheck.js';
+import { computeConfigHash } from '../state/hash.js';
+import { StateStore } from '../state/store.js';
+import type { SshSession } from '../remote-ops/session.js';
+import type { HermesTomlConfig } from '../schema/hermes-toml.js';
+import type { Reporter } from './reporter.js';
+
+export interface BootstrapArgs {
+  session: SshSession;
+  projectDir: string;
+  config: HermesTomlConfig;
+  ageKeyPath: string;
+  reporter: Reporter;
+}
+
+/**
+ * Phase 4 — generate the four nix/secrets files locally, SCP them to
+ * /etc/nixos and /var/lib/sops-nix on the box, then run nixos-rebuild
+ * switch via the flake. Throws on rebuild failure with the captured
+ * tail in the message.
+ *
+ * Both `runDeploy` and `runUpdate` call this — same upload + rebuild
+ * mechanics, only the surrounding context (provision vs reconcile)
+ * differs between them.
+ */
+export async function uploadAndRebuild(args: BootstrapArgs): Promise<void> {
+  const { session, projectDir, config, ageKeyPath, reporter } = args;
+  const flakeNix = generateFlakeNix();
+  const configurationNix = generateConfigurationNix(config);
+  const hermesNix = generateHermesNix(config);
+  const ageKeyContent = readFileSync(ageKeyPath, 'utf-8');
+  const secretsContent = readFileSync(
+    pathResolve(projectDir, config.hermes.secrets_file),
+  );
+
+  await session.uploadFile('/etc/nixos/flake.nix', flakeNix);
+  await session.uploadFile('/etc/nixos/configuration.nix', configurationNix);
+  await session.uploadFile('/etc/nixos/hermes.nix', hermesNix);
+  await session.uploadFile('/etc/nixos/secrets.enc.yaml', secretsContent);
+  // sops-nix creates /var/lib/sops-nix on activation, but we need the dir
+  // to exist before SFTP can drop the age key there on the very first
+  // rebuild. mkdir -p is idempotent on subsequent deploys.
+  await session.exec('mkdir -p /var/lib/sops-nix');
+  await session.uploadFile('/var/lib/sops-nix/age.key', ageKeyContent, 0o600);
+
+  const rebuild = await runNixosRebuild(session, (_s, line) => reporter.log(line));
+  if (!rebuild.success) {
+    throw new Error(`nixos-rebuild failed:\n${rebuild.tail.join('\n')}`);
+  }
+}
+
+export interface HealthcheckArgs {
+  session: SshSession;
+  store: StateStore;
+  deploymentName: string;
+  projectDir: string;
+  tomlPath: string;
+  config: HermesTomlConfig;
+  healthcheckTimeoutMs?: number;
+}
+
+/**
+ * Phase 5 — write the new last_config_hash + last_deployed_at into the
+ * state store FIRST (the new config was successfully applied by
+ * nixos-rebuild in Phase 4 — that fact is what `last_config_hash`
+ * records, independent of whether the resulting service is healthy),
+ * THEN poll the healthcheck and write the result. This ordering is
+ * what makes a subsequent `update` correctly short-circuit instead of
+ * re-applying the same config in a debug loop after a healthcheck
+ * failure.
+ *
+ * Returns 'healthy' | 'unhealthy'. Caller decides what to do with the
+ * unhealthy case (deploy returns it; update logs it).
+ */
+export async function recordConfigAndHealthcheck(
+  args: HealthcheckArgs,
+): Promise<{ health: 'healthy' | 'unhealthy'; journalTail: string[] }> {
+  const { session, store, deploymentName, projectDir, tomlPath, config, healthcheckTimeoutMs } = args;
+
+  const configHash = computeConfigHash(
+    [
+      tomlPath,
+      pathResolve(projectDir, config.hermes.secrets_file),
+      config.hermes.nix_extra ? pathResolve(projectDir, config.hermes.nix_extra.file) : '',
+    ].filter(Boolean),
+    true,
+  );
+
+  await store.update(state => {
+    const d = state.deployments[deploymentName]!;
+    d.last_config_hash = configHash;
+    d.last_deployed_at = new Date().toISOString();
+  });
+
+  const health = await pollHermesHealth(session, { timeoutMs: healthcheckTimeoutMs });
+  await store.update(state => {
+    state.deployments[deploymentName]!.health = health.health;
+  });
+  return health;
+}
