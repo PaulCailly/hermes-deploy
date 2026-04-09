@@ -14,6 +14,7 @@ import {
   secretList,
   secretEdit,
 } from './commands/secret.js';
+import { keyExport, keyImport, keyPath } from './commands/key.js';
 
 const program = new Command();
 
@@ -209,6 +210,44 @@ secret
       await secretEdit({ name: opts.name, projectPath: opts.project });
     } catch (e) {
       console.error(`hermes-deploy secret edit: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+const key = program.command('key').description('Manage per-deployment age keys');
+
+key
+  .command('export <name>')
+  .description("Write a deployment's age private key to stdout")
+  .action(async (name) => {
+    try {
+      process.stdout.write(await keyExport({ name }));
+    } catch (e) {
+      console.error(`hermes-deploy key export: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+key
+  .command('import <name> <path>')
+  .description('Copy an age private key into the hermes-deploy config')
+  .action(async (name, path) => {
+    try {
+      console.log(await keyImport({ name, path }));
+    } catch (e) {
+      console.error(`hermes-deploy key import: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+key
+  .command('path <name>')
+  .description("Print the on-disk path of a deployment's age key")
+  .action(async (name) => {
+    try {
+      console.log(await keyPath({ name }));
+    } catch (e) {
+      console.error(`hermes-deploy key path: ${(e as Error).message}`);
       process.exit(1);
     }
   });
