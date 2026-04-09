@@ -17,7 +17,11 @@ describe.skipIf(!sopsInstalled)('ensureSopsBootstrap', () => {
     dir = mkdtempSync(join(tmpdir(), 'hermes-sops-'));
     // Generate a real age key so sops can encrypt successfully
     const ageOutput = execSync('age-keygen', { encoding: 'utf-8' });
-    realPublicKey = ageOutput.match(/^# public key: (age1[a-z0-9]+)$/m)![1];
+    const pubMatch = ageOutput.match(/^# public key: (age1[a-z0-9]+)$/m);
+    if (!pubMatch || !pubMatch[1]) {
+      throw new Error('age-keygen output missing public key line');
+    }
+    realPublicKey = pubMatch[1];
     // Save private key to a temp file and point sops at it
     const ageKeyFile = join(dir, 'age-key.txt');
     writeFileSync(ageKeyFile, ageOutput);
