@@ -4,6 +4,7 @@ import { updateCommand } from './commands/update.js';
 import { destroyCommand } from './commands/destroy.js';
 import { statusCommand } from './commands/status.js';
 import { sshCommand } from './commands/ssh.js';
+import { lsCommand } from './commands/ls.js';
 
 const program = new Command();
 
@@ -85,6 +86,19 @@ program
       await sshCommand({ name: opts.name ?? positionalName, projectPath: opts.project });
     } catch (e) {
       console.error(`hermes-deploy ssh: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('ls')
+  .description('List all deployments across all clouds')
+  .option('--watch', 'poll live status continuously (Ink dashboard, post-Phase H)')
+  .action(async (opts) => {
+    try {
+      await lsCommand({ watch: opts.watch });
+    } catch (e) {
+      console.error(`hermes-deploy ls: ${(e as Error).message}`);
       process.exit(1);
     }
   });
