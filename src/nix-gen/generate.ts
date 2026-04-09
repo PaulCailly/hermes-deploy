@@ -68,7 +68,16 @@ export function generateHermesNix(config: HermesTomlConfig): string {
 }
 
 function nixPath(p: string): string {
-  // Bare relative paths in Nix don't need quoting
+  // Nix unquoted path literals support a limited character set:
+  // [a-zA-Z0-9._+-/]. Anything else (including spaces) is invalid syntax.
+  if (/[^\w./+-]/.test(p)) {
+    throw new Error(
+      `nix-gen: path "${p}" contains characters that are invalid in a Nix ` +
+      `path literal. Use a path with only [A-Za-z0-9._+-/] characters.`,
+    );
+  }
+  // Bare relative paths in Nix don't need a "./" prefix unless they would
+  // otherwise be parsed as something else.
   if (p.startsWith('./') || p.startsWith('/')) return p;
   return `./${p}`;
 }

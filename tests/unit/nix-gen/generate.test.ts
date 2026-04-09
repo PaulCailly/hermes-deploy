@@ -21,6 +21,21 @@ describe('generateHermesNix', () => {
       join(fixturesDir, 'nix-snapshots/full.hermes.nix'),
     );
   });
+
+  it('throws on a soul path that contains a space', () => {
+    expect(() => generateHermesNix({
+      name: 'x',
+      cloud: { provider: 'aws', profile: 'default', region: 'eu-west-3', size: 'small' },
+      network: { ssh_allowed_from: 'auto', inbound_ports: [] },
+      hermes: {
+        model: 'm',
+        soul: './path with space/SOUL.md',
+        secrets_file: './secrets.enc.yaml',
+        platforms: { discord: { enabled: true, token_key: 'k' } },
+        mcp_servers: [],
+      },
+    })).toThrow(/invalid in a Nix path literal/);
+  });
 });
 
 describe('generateConfigurationNix', () => {
