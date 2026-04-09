@@ -16,12 +16,8 @@ profile = "default"
 region = "eu-west-3"
 size = "small"
 [hermes]
-model = "m"
-soul = "./SOUL.md"
-secrets_file = "./secrets.enc.yaml"
-[hermes.platforms.discord]
-enabled = true
-token_key = "k"
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"
 `);
     const config = loadHermesToml(path);
     expect(config.name).toBe('ok');
@@ -47,11 +43,8 @@ profile = "p"
 region = "r"
 size = "small"
 [hermes]
-model = "m"
-soul = "s"
-secrets_file = "se"
-[hermes.platforms.discord]
-enabled = true
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"
 `);
     try {
       loadHermesToml(path);

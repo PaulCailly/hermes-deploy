@@ -35,9 +35,9 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   reporter.phaseStart('validate', 'Validating project configuration');
   const tomlPath = join(opts.projectDir, 'hermes.toml');
   const config = loadHermesToml(tomlPath);
-  const soulPath = pathResolve(opts.projectDir, config.hermes.soul);
-  if (!existsSync(soulPath)) {
-    throw new HermesTomlError(`SOUL file not found: ${soulPath}`);
+  const configFilePath = pathResolve(opts.projectDir, config.hermes.config_file);
+  if (!existsSync(configFilePath)) {
+    throw new HermesTomlError(`config_file not found: ${configFilePath}`);
   }
   reporter.phaseDone('validate');
 

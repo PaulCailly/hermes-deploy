@@ -57,20 +57,25 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   reporter.phaseStart('validate', `Validating ${opts.deploymentName}`);
   const tomlPath = join(deployment.project_path, 'hermes.toml');
   const config = loadHermesToml(tomlPath);
-  const soulPath = pathResolve(deployment.project_path, config.hermes.soul);
-  if (!existsSync(soulPath)) {
-    throw new HermesTomlError(`SOUL file not found: ${soulPath}`);
+  const configFilePath = pathResolve(deployment.project_path, config.hermes.config_file);
+  if (!existsSync(configFilePath)) {
+    throw new HermesTomlError(`config_file not found: ${configFilePath}`);
   }
   reporter.phaseDone('validate');
 
   // === Hash short-circuit — no changes means no work ===
+  const documentPaths = Object.values(config.hermes.documents).map(p =>
+    pathResolve(deployment.project_path, p),
+  );
   const newHash = computeConfigHash(
     [
       tomlPath,
+      pathResolve(deployment.project_path, config.hermes.config_file),
       pathResolve(deployment.project_path, config.hermes.secrets_file),
       config.hermes.nix_extra
-        ? pathResolve(deployment.project_path, config.hermes.nix_extra.file)
+        ? pathResolve(deployment.project_path, config.hermes.nix_extra)
         : '',
+      ...documentPaths,
     ].filter(Boolean),
     true,
   );

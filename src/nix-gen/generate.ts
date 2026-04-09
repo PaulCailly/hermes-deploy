@@ -37,7 +37,7 @@ export function generateHermesNix(config: HermesTomlConfig): string {
   if (docEntries.length > 0) {
     lines.push('');
     lines.push('    documents = {');
-    for (const [filename, _path] of docEntries) {
+    for (const [filename] of docEntries) {
       // The file is uploaded to /etc/nixos/<filename> by the orchestrator.
       // Inside hermes.nix the path is just ./<filename> — Nix path literals
       // resolve relative to the file containing them.

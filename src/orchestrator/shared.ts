@@ -37,17 +37,35 @@ export async function uploadAndRebuild(args: BootstrapArgs): Promise<void> {
   const configurationNix = generateConfigurationNix(config);
   const hermesNix = generateHermesNix(config);
   const ageKeyContent = readFileSync(ageKeyPath, 'utf-8');
-  const secretsContent = readFileSync(
-    pathResolve(projectDir, config.hermes.secrets_file),
-  );
 
+  // Upload the static files
   await session.uploadFile('/etc/nixos/flake.nix', flakeNix);
   await session.uploadFile('/etc/nixos/configuration.nix', configurationNix);
   await session.uploadFile('/etc/nixos/hermes.nix', hermesNix);
-  await session.uploadFile('/etc/nixos/secrets.enc.yaml', secretsContent);
-  // sops-nix creates /var/lib/sops-nix on activation, but we need the dir
-  // to exist before SFTP can drop the age key there on the very first
-  // rebuild. mkdir -p is idempotent on subsequent deploys.
+
+  // Upload the user's config.yaml verbatim
+  const configYamlContent = readFileSync(pathResolve(projectDir, config.hermes.config_file));
+  await session.uploadFile('/etc/nixos/config.yaml', configYamlContent);
+
+  // Upload the encrypted secrets file
+  const secretsContent = readFileSync(pathResolve(projectDir, config.hermes.secrets_file));
+  await session.uploadFile('/etc/nixos/secrets.env.enc', secretsContent);
+
+  // Upload each [hermes.documents] entry to /etc/nixos/<filename>
+  for (const [filename, relPath] of Object.entries(config.hermes.documents)) {
+    const docContent = readFileSync(pathResolve(projectDir, relPath));
+    await session.uploadFile('/etc/nixos/' + filename, docContent);
+  }
+
+  // Upload the optional nix_extra file
+  if (config.hermes.nix_extra) {
+    const extraContent = readFileSync(pathResolve(projectDir, config.hermes.nix_extra));
+    await session.uploadFile('/etc/nixos/hermes.extra.nix', extraContent);
+  }
+
+  // sops-nix creates /var/lib/sops-nix on activation, but we need the
+  // dir to exist before SFTP can drop the age key there on the very
+  // first rebuild. mkdir -p is idempotent on subsequent deploys.
   await session.exec('mkdir -p /var/lib/sops-nix');
   await session.uploadFile('/var/lib/sops-nix/age.key', ageKeyContent, 0o600);
 
@@ -85,11 +103,16 @@ export async function recordConfigAndHealthcheck(
 ): Promise<{ health: 'healthy' | 'unhealthy'; journalTail: string[] }> {
   const { session, store, deploymentName, projectDir, tomlPath, config, healthcheckTimeoutMs } = args;
 
+  const documentPaths = Object.values(config.hermes.documents).map(p =>
+    pathResolve(projectDir, p),
+  );
   const configHash = computeConfigHash(
     [
       tomlPath,
+      pathResolve(projectDir, config.hermes.config_file),
       pathResolve(projectDir, config.hermes.secrets_file),
-      config.hermes.nix_extra ? pathResolve(projectDir, config.hermes.nix_extra.file) : '',
+      config.hermes.nix_extra ? pathResolve(projectDir, config.hermes.nix_extra) : '',
+      ...documentPaths,
     ].filter(Boolean),
     true,
   );

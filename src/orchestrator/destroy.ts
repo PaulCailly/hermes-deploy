@@ -46,7 +46,7 @@ export async function runDestroy(opts: DestroyOptions): Promise<void> {
     `${deployment.ssh_key_path}.pub`,
     deployment.age_key_path,
     join(deployment.project_path, '.sops.yaml'),
-    join(deployment.project_path, 'secrets.enc.yaml'),
+    join(deployment.project_path, 'secrets.env.enc'),
   ];
   for (const path of filesToUnlink) {
     if (existsSync(path)) {
