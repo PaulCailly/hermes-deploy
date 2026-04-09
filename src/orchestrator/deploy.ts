@@ -20,6 +20,7 @@ export interface DeployOptions {
   ageKeyGenerator: (path: string) => Promise<{ publicKey: string; privateKeyPath: string }>;
   sopsBootstrap: (projectDir: string, agePublicKey: string) => Promise<void>;
   waitSsh: (host: string) => Promise<void>;
+  healthcheckTimeoutMs?: number;
   reporter?: Reporter;
 }
 
@@ -169,7 +170,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
       d.last_deployed_at = new Date().toISOString();
     });
 
-    const health = await pollHermesHealth(session);
+    const health = await pollHermesHealth(session, { timeoutMs: opts.healthcheckTimeoutMs });
     await store.update(state => {
       state.deployments[config.name]!.health = health.health;
     });

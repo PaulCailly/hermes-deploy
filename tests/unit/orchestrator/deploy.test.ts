@@ -5,6 +5,8 @@ import { join, dirname } from 'node:path';
 import { runDeploy } from '../../../src/orchestrator/deploy.js';
 import type { CloudProvider } from '../../../src/cloud/core.js';
 import type { SshSession } from '../../../src/remote-ops/session.js';
+import { StateStore } from '../../../src/state/store.js';
+import { getStatePaths } from '../../../src/state/paths.js';
 
 function fakeProvider(): CloudProvider {
   return {
@@ -65,6 +67,21 @@ token_key = "k"
 
   afterEach(() => rmSync(configDir, { recursive: true, force: true }));
 
+  const sharedKeyGenerators = {
+    ageKeyGenerator: async (path: string) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, '# public key: age1abc\nAGE-SECRET-KEY-1abc\n');
+      return { publicKey: 'age1abc', privateKeyPath: path };
+    },
+    sshKeyGenerator: async (path: string) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----');
+      writeFileSync(`${path}.pub`, 'ssh-ed25519 AAAA test');
+      return { publicKey: 'ssh-ed25519 AAAA test', privateKeyPath: path, publicKeyPath: `${path}.pub` };
+    },
+    sopsBootstrap: async () => {},
+  };
+
   it('runs all phases and updates state', async () => {
     process.env.XDG_CONFIG_HOME = configDir;
 
@@ -92,5 +109,68 @@ token_key = "k"
     expect(result.health).toBe('healthy');
     expect(result.publicIp).toBe('203.0.113.42');
     expect(provider.provision).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists the cloud ledger to state when Phase 3 (waitSsh) fails', async () => {
+    process.env.XDG_CONFIG_HOME = configDir;
+    const provider = fakeProvider();
+
+    await expect(
+      runDeploy({
+        projectDir,
+        provider,
+        sessionFactory: async () => fakeSession(),
+        detectPublicIp: async () => '203.0.113.1/32',
+        ...sharedKeyGenerators,
+        waitSsh: async () => { throw new Error('ssh timeout'); },
+      }),
+    ).rejects.toThrow('ssh timeout');
+
+    // The ledger MUST be persisted before Phase 3 — otherwise destroy can't
+    // clean up after a Phase 3 failure.
+    const store = new StateStore(getStatePaths());
+    const state = await store.read();
+    expect(state.deployments['test']).toBeDefined();
+    expect(state.deployments['test']?.cloud_resources).toMatchObject({
+      instance_id: 'i-1',
+      security_group_id: 'sg-1',
+      key_pair_name: 'kp-1',
+      eip_allocation_id: 'eipalloc-1',
+    });
+  });
+
+  it('returns unhealthy + records health=unhealthy in state when healthcheck fails', async () => {
+    process.env.XDG_CONFIG_HOME = configDir;
+    const provider = fakeProvider();
+
+    const unhealthySession = (): SshSession => ({
+      exec: vi.fn(async (cmd: string) => {
+        if (cmd.includes('journalctl')) {
+          return { exitCode: 0, stdout: 'service crashed', stderr: '' };
+        }
+        return { exitCode: 3, stdout: 'inactive', stderr: '' };
+      }),
+      execStream: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+      uploadFile: vi.fn(async () => {}),
+      dispose: vi.fn(async () => {}),
+    });
+
+    const result = await runDeploy({
+      projectDir,
+      provider,
+      sessionFactory: async () => unhealthySession(),
+      detectPublicIp: async () => '203.0.113.1/32',
+      ...sharedKeyGenerators,
+      waitSsh: async () => {},
+      healthcheckTimeoutMs: 50,
+    });
+
+    expect(result.health).toBe('unhealthy');
+    expect(result.publicIp).toBe('203.0.113.42');
+
+    const store = new StateStore(getStatePaths());
+    const state = await store.read();
+    expect(state.deployments['test']?.health).toBe('unhealthy');
+    expect(state.deployments['test']?.last_config_hash).toMatch(/^sha256:/);
   });
 });
