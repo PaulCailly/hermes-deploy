@@ -10,6 +10,7 @@ import {
   AssociateAddressCommand,
   DeleteKeyPairCommand,
   DeleteSecurityGroupCommand,
+  DescribeInstancesCommand,
 } from '@aws-sdk/client-ec2';
 import { provisionAws } from '../../../../src/cloud/aws/provision.js';
 import type { ProvisionSpec, ResourceLedger } from '../../../../src/cloud/core.js';
@@ -37,6 +38,13 @@ describe('provisionAws', () => {
     ec2Mock.on(AllocateAddressCommand).resolves({
       AllocationId: 'eipalloc-1',
       PublicIp: '203.0.113.42',
+    });
+    // waitUntilInstanceRunning polls DescribeInstances; return 'running'
+    // immediately so the waiter resolves without retrying.
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [{
+        Instances: [{ InstanceId: 'i-1', State: { Name: 'running' } }],
+      }],
     });
     ec2Mock.on(AssociateAddressCommand).resolves({});
 

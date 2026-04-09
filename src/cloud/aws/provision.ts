@@ -6,6 +6,7 @@ import {
   RunInstancesCommand,
   AllocateAddressCommand,
   AssociateAddressCommand,
+  waitUntilInstanceRunning,
 } from '@aws-sdk/client-ec2';
 import type { ProvisionSpec, ResourceLedger, Instance } from '../core.js';
 import { SIZE_MAP_AWS } from '../core.js';
@@ -105,7 +106,15 @@ export async function provisionAws(
     }
     r.eip_allocation_id = eipResult.AllocationId;
 
-    // 6. AssociateAddress (must wait for instance to be in 'pending'/'running' state)
+    // 6. Wait for instance to reach 'running' before associating the EIP.
+    // AssociateAddress rejects with "not in a valid state" during the brief
+    // window between RunInstances returning and the instance reaching pending.
+    await waitUntilInstanceRunning(
+      { client: ec2, maxWaitTime: 300 },
+      { InstanceIds: [instanceId] },
+    );
+
+    // 7. AssociateAddress
     await ec2.send(
       new AssociateAddressCommand({
         AllocationId: eipResult.AllocationId,
