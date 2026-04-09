@@ -39,4 +39,24 @@ describe('computeConfigHash', () => {
     expect(h).toMatch(/^sha256:/);
     rmSync(dir, { recursive: true });
   });
+
+  it('produces the same hash for identical content at different paths', () => {
+    const dirA = mkdtempSync(join(tmpdir(), 'hermes-hash-a-'));
+    const dirB = mkdtempSync(join(tmpdir(), 'hermes-hash-b-'));
+    writeFileSync(join(dirA, 'hermes.toml'), 'name="x"\n');
+    writeFileSync(join(dirA, 'secrets.enc.yaml'), 'enc:1\n');
+    writeFileSync(join(dirB, 'hermes.toml'), 'name="x"\n');
+    writeFileSync(join(dirB, 'secrets.enc.yaml'), 'enc:1\n');
+    const a = computeConfigHash([
+      join(dirA, 'hermes.toml'),
+      join(dirA, 'secrets.enc.yaml'),
+    ]);
+    const b = computeConfigHash([
+      join(dirB, 'hermes.toml'),
+      join(dirB, 'secrets.enc.yaml'),
+    ]);
+    expect(a).toBe(b);
+    rmSync(dirA, { recursive: true });
+    rmSync(dirB, { recursive: true });
+  });
 });
