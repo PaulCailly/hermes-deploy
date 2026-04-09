@@ -1,7 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { resolveDeployment } from './resolve.js';
 import { StateStore } from '../state/store.js';
 import { getStatePaths } from '../state/paths.js';
@@ -12,11 +11,6 @@ interface SecretContext {
   ageKeyPath: string;
 }
 
-/**
- * Resolve the deployment, look it up in state to find the project_path
- * and the per-deployment age key path. The age key path is what
- * SOPS_AGE_KEY_FILE points at when we shell out to sops.
- */
 async function getContext(name?: string, projectPath?: string): Promise<SecretContext> {
   const { name: resolvedName, projectPath: resolvedProject } = await resolveDeployment({
     name,
@@ -32,7 +26,7 @@ async function getContext(name?: string, projectPath?: string): Promise<SecretCo
       `deployment "${resolvedName}" not found in state — run \`hermes-deploy up\` first`,
     );
   }
-  const secretsPath = join(resolvedProject, 'secrets.enc.yaml');
+  const secretsPath = join(resolvedProject, 'secrets.env.enc');
   return {
     projectDir: resolvedProject,
     secretsPath,
@@ -51,15 +45,47 @@ function runSops(args: string[], ageKeyFile: string): string {
   return result.stdout;
 }
 
-async function readSecrets(ctx: SecretContext): Promise<Record<string, unknown>> {
-  const decrypted = runSops(['--decrypt', ctx.secretsPath], ctx.ageKeyPath);
-  return (parseYaml(decrypted) ?? {}) as Record<string, unknown>;
+/**
+ * Parse a dotenv-format string into a Record. Tolerates blank lines and
+ * `#`-prefixed comments. Does NOT handle quoted values or multi-line
+ * values — hermes-deploy is opinionated about secrets being single-line
+ * KEY=value (no spaces around =, no surrounding quotes). If a real
+ * user need for quoted values shows up, switch to a real dotenv parser.
+ */
+function parseDotenv(content: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1);
+    if (key) out[key] = value;
+  }
+  return out;
 }
 
-function writeSecrets(ctx: SecretContext, data: Record<string, unknown>): void {
-  const plain = stringifyYaml(data);
+function stringifyDotenv(data: Record<string, string>): string {
+  const lines = Object.entries(data).map(([k, v]) => `${k}=${v}`);
+  return lines.join('\n') + '\n';
+}
+
+async function readSecrets(ctx: SecretContext): Promise<Record<string, string>> {
+  const decrypted = runSops(
+    ['--decrypt', '--input-type', 'dotenv', '--output-type', 'dotenv', ctx.secretsPath],
+    ctx.ageKeyPath,
+  );
+  return parseDotenv(decrypted);
+}
+
+function writeSecrets(ctx: SecretContext, data: Record<string, string>): void {
+  const plain = stringifyDotenv(data);
   writeFileSync(ctx.secretsPath, plain);
-  runSops(['--encrypt', '--in-place', ctx.secretsPath], ctx.ageKeyPath);
+  runSops(
+    ['--encrypt', '--input-type', 'dotenv', '--output-type', 'dotenv', '--in-place', ctx.secretsPath],
+    ctx.ageKeyPath,
+  );
 }
 
 export interface SecretRefOptions {
@@ -81,8 +107,7 @@ export async function secretGet(
 ): Promise<string | undefined> {
   const ctx = await getContext(opts.name, opts.projectPath);
   const data = await readSecrets(ctx);
-  const v = data[opts.key];
-  return v === undefined ? undefined : String(v);
+  return data[opts.key];
 }
 
 export async function secretRemove(
@@ -101,11 +126,6 @@ export async function secretList(opts: SecretRefOptions): Promise<string[]> {
 }
 
 export async function secretEdit(opts: SecretRefOptions): Promise<void> {
-  // sops opens $EDITOR (vim by default) which immediately panics on a
-  // non-interactive stdin and floods stderr with terminal escape codes
-  // before exiting non-zero. Refuse early with a clear message instead
-  // of letting that happen — `secret set` is the right answer in
-  // pipelines and CI.
   if (!process.stdout.isTTY) {
     throw new Error(
       'secret edit requires an interactive terminal. Use `secret set <key> <value>` from non-TTY contexts.',
@@ -113,7 +133,8 @@ export async function secretEdit(opts: SecretRefOptions): Promise<void> {
   }
 
   const ctx = await getContext(opts.name, opts.projectPath);
-  execFileSync('sops', [ctx.secretsPath], {
+  // sops detects the .env extension OK on direct edit, but be explicit
+  execFileSync('sops', ['--input-type', 'dotenv', '--output-type', 'dotenv', ctx.secretsPath], {
     stdio: 'inherit',
     env: { ...process.env, SOPS_AGE_KEY_FILE: ctx.ageKeyPath },
   });
