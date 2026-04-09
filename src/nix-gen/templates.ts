@@ -39,6 +39,11 @@ export const FLAKE_NIX = `{
 }
 `;
 
+export interface CachixConfig {
+  name: string;
+  public_key: string;
+}
+
 /**
  * configuration.nix is the host-level NixOS config (imports amazon-image
  * so the instance boots correctly as an EC2 VM, enables flakes so
@@ -47,15 +52,36 @@ export const FLAKE_NIX = `{
  * does that via the modules list above. It also explicitly does NOT
  * declare any hermes-agent options — those live in ./hermes.nix which
  * is the generator's output.
+ *
+ * If a Cachix cache is configured (via [hermes.cachix] in hermes.toml),
+ * the substituter and trusted-public-key are appended to nix.settings so
+ * subsequent rebuilds substitute the hermes-agent closure from binary
+ * cache instead of compiling from source.
  */
-export const CONFIGURATION_NIX = `{ config, pkgs, lib, modulesPath, ... }:
+export function configurationNix(cachix?: CachixConfig): string {
+  const substitutersBlock = cachix
+    ? `
+  nix.settings = {
+    substituters = [
+      "https://cache.nixos.org/"
+      "https://${cachix.name}.cachix.org/"
+    ];
+    trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "${cachix.public_key}"
+    ];
+  };
+`
+    : '';
+
+  return `{ config, pkgs, lib, modulesPath, ... }:
 {
   imports = [
     "\${modulesPath}/virtualisation/amazon-image.nix"
   ];
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
-
+${substitutersBlock}
   system.stateVersion = "25.11";
 
   services.openssh = {
@@ -83,3 +109,4 @@ export const CONFIGURATION_NIX = `{ config, pkgs, lib, modulesPath, ... }:
   };
 }
 `;
+}

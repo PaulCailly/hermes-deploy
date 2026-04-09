@@ -49,13 +49,39 @@ describe('generateHermesNix', () => {
 });
 
 describe('generateConfigurationNix', () => {
+  const baseConfig = loadHermesToml(join(fixturesDir, 'hermes-toml/minimal.toml'));
+
   it('imports amazon-image, enables flakes, and declares the sops config', () => {
-    const out = generateConfigurationNix();
+    const out = generateConfigurationNix(baseConfig);
     expect(out).toContain('imports = [');
     expect(out).toContain('virtualisation/amazon-image.nix');
     expect(out).toContain('experimental-features');
     expect(out).toContain('sops');
     expect(out).toContain('system.stateVersion = "25.11"');
+  });
+
+  it('omits cachix substituters when [hermes.cachix] is not set', () => {
+    const out = generateConfigurationNix(baseConfig);
+    expect(out).not.toContain('.cachix.org');
+    expect(out).not.toContain('substituters');
+  });
+
+  it('appends a cachix substituter and trusted key when [hermes.cachix] is set', () => {
+    const withCachix = {
+      ...baseConfig,
+      hermes: {
+        ...baseConfig.hermes,
+        cachix: {
+          name: 'hermes-deploy',
+          public_key: 'hermes-deploy.cachix.org-1:abc123def456ghi789jkl012mno345pqr678stu901vwx234yza567=',
+        },
+      },
+    };
+    const out = generateConfigurationNix(withCachix);
+    expect(out).toContain('https://hermes-deploy.cachix.org/');
+    expect(out).toContain('hermes-deploy.cachix.org-1:abc123def456ghi789jkl012mno345pqr678stu901vwx234yza567=');
+    expect(out).toContain('cache.nixos.org');
+    expect(out).toContain('substituters');
   });
 });
 

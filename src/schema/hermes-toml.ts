@@ -48,6 +48,24 @@ const NixExtraSchema = z.object({
   file: z.string().min(1),
 });
 
+// Optional Cachix binary cache for substituting hermes-agent's closure
+// instead of building it from source. When set, configuration.nix on the
+// box adds <name>.cachix.org as a substituter and trusts <public_key>.
+// First deploy still has to build (and ideally push to the cache); every
+// subsequent first-deploy of the same hermes-agent rev pulls from cache.
+const CachixSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .regex(/^[a-z0-9][a-z0-9-]*$/, {
+      message: 'cachix.name must be lowercase alphanumeric with hyphens',
+    }),
+  public_key: z.string().regex(/^[a-z0-9-]+\.cachix\.org-1:[A-Za-z0-9+/=]+$/, {
+    message:
+      'cachix.public_key must look like "<name>.cachix.org-1:<base64>" — copy it from your cache settings page',
+  }),
+});
+
 const HermesSchema = z.object({
   model: z.string().min(1),
   soul: z.string().min(1),
@@ -58,6 +76,7 @@ const HermesSchema = z.object({
   }),
   mcp_servers: z.array(McpServerSchema).default([]),
   nix_extra: NixExtraSchema.optional(),
+  cachix: CachixSchema.optional(),
 });
 
 export const HermesTomlSchema = z.object({

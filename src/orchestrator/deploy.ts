@@ -135,7 +135,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   const session = await opts.sessionFactory(instance.publicIp, privateKeyContent);
   try {
     const flakeNix = generateFlakeNix();
-    const configurationNix = generateConfigurationNix();
+    const configurationNix = generateConfigurationNix(config);
     const hermesNix = generateHermesNix(config);
     const ageKeyContent = readFileSync(ageKeyPath, 'utf-8');
     const secretsContent = readFileSync(
