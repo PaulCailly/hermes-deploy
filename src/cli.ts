@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { upCommand } from './commands/up.js';
+import { destroyCommand } from './commands/destroy.js';
 
 const program = new Command();
 
@@ -20,6 +21,19 @@ program
     }
   });
 
-// destroy/status/ssh stubs land in J2-J4
+program
+  .command('destroy')
+  .argument('[name]', 'deployment name (defaults to the name in ./hermes.toml)')
+  .option('--yes', 'skip confirmation prompt')
+  .action(async (name, opts) => {
+    try {
+      await destroyCommand({ name, yes: opts.yes });
+    } catch (e) {
+      console.error(`hermes-deploy destroy: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+// status/ssh stubs land in J3-J4
 
 program.parseAsync(process.argv);
