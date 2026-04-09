@@ -36,7 +36,7 @@ export type ResourceLedger =
   | { kind: 'gcp'; resources: Partial<GcpResources> };
 
 export interface InstanceStatus {
-  state: 'pending' | 'running' | 'stopping' | 'stopped' | 'terminated' | 'unknown';
+  state: 'pending' | 'running' | 'shutting-down' | 'stopping' | 'stopped' | 'terminated' | 'unknown';
   publicIp: string | null;
 }
 
