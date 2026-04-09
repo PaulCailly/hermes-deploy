@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { runDeploy } from '../../../src/orchestrator/deploy.js';
-import type { CloudProvider, Instance, ResourceLedger } from '../../../src/cloud/core.js';
+import type { CloudProvider } from '../../../src/cloud/core.js';
 import type { SshSession } from '../../../src/remote-ops/session.js';
 
 function fakeProvider(): CloudProvider {

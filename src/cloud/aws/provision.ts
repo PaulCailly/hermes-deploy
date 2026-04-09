@@ -120,7 +120,7 @@ export async function provisionAws(
     // Roll back whatever was created so far, then re-throw a typed error
     try {
       await destroyAws(ec2, ledger);
-    } catch (rollbackError) {
+    } catch {
       // Swallow rollback errors; surface the original
     }
     throw new CloudProvisionError(

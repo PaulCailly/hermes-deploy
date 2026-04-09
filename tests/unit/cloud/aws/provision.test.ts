@@ -10,8 +10,6 @@ import {
   AssociateAddressCommand,
   DeleteKeyPairCommand,
   DeleteSecurityGroupCommand,
-  TerminateInstancesCommand,
-  ReleaseAddressCommand,
 } from '@aws-sdk/client-ec2';
 import { provisionAws } from '../../../../src/cloud/aws/provision.js';
 import type { ProvisionSpec, ResourceLedger } from '../../../../src/cloud/core.js';
