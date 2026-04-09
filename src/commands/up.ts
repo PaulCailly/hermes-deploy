@@ -10,6 +10,9 @@ import { detectPublicIp } from '../utils/public-ip.js';
 import { generateSshKeypair } from '../crypto/ssh-keygen.js';
 import { generateAgeKeypair } from '../crypto/age-keygen.js';
 import { ensureSopsBootstrap } from '../sops/bootstrap.js';
+import { shouldUseInk } from '../ui/tty.js';
+import { createInkReporter } from '../ui/index.js';
+import { createPlainReporter } from '../orchestrator/reporter.js';
 
 export interface UpOptions {
   name?: string;
@@ -36,6 +39,8 @@ export async function upCommand(opts: UpOptions): Promise<void> {
     imageCacheFile: paths.imageCacheFile,
   });
 
+  const reporter = shouldUseInk() ? createInkReporter() : createPlainReporter();
+
   const result = await runDeploy({
     projectDir: projectPath,
     provider,
@@ -46,6 +51,7 @@ export async function upCommand(opts: UpOptions): Promise<void> {
     ageKeyGenerator: async (path) => generateAgeKeypair(path),
     sopsBootstrap: async (dir, key) => ensureSopsBootstrap(dir, key),
     waitSsh: (host) => waitForSshPort({ host }),
+    reporter,
   });
 
   if (result.health === 'unhealthy') process.exit(1);
