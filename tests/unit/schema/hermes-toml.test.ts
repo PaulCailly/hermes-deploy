@@ -17,6 +17,7 @@ describe('HermesTomlSchema', () => {
       expect(result.data.name).toBe('test-minimal');
       expect(result.data.cloud.provider).toBe('aws');
       expect(result.data.cloud.size).toBe('small');
+      expect(result.data.cloud.disk_gb).toBe(30); // default
       expect(result.data.network.ssh_allowed_from).toBe('auto'); // default
       expect(result.data.network.inbound_ports).toEqual([]); // default
     }

@@ -34,7 +34,7 @@ describe('generateHermesNix', () => {
     // silently produce broken Nix.
     expect(() => generateHermesNix({
       name: 'x',
-      cloud: { provider: 'aws', profile: 'default', region: 'eu-west-3', size: 'small' },
+      cloud: { provider: 'aws', profile: 'default', region: 'eu-west-3', size: 'small', disk_gb: 30 },
       network: { ssh_allowed_from: 'auto', inbound_ports: [] },
       hermes: {
         model: 'm',

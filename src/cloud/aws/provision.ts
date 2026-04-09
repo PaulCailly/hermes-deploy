@@ -79,6 +79,12 @@ export async function provisionAws(
     );
 
     // 4. RunInstances
+    // NixOS community AMIs expose their root volume on /dev/xvda. We
+    // override BlockDeviceMappings to enlarge the root volume because
+    // the AMI snapshot is ~5 GB — far too small to build the hermes-agent
+    // closure from source (first deploy's pynacl + pyproject wheels OOM
+    // the disk otherwise). The size comes from cloud.disk_gb in
+    // hermes.toml (default 30).
     const runResult = await ec2.send(
       new RunInstancesCommand({
         ImageId: spec.image.id,
@@ -87,6 +93,16 @@ export async function provisionAws(
         MaxCount: 1,
         KeyName: keyName,
         SecurityGroupIds: [sgResult.GroupId],
+        BlockDeviceMappings: [
+          {
+            DeviceName: '/dev/xvda',
+            Ebs: {
+              VolumeSize: spec.diskGb,
+              VolumeType: 'gp3',
+              DeleteOnTermination: true,
+            },
+          },
+        ],
         TagSpecifications: [tagSpec('instance') as any],
       }),
     );

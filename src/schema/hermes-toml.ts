@@ -10,6 +10,12 @@ const CloudSchema = z
     region: z.string().min(1),
     zone: z.string().min(1).optional(),
     size: SizeSchema,
+    // Root disk size in GB. NixOS community AMIs default to ~5 GB, which
+    // is too small to build the hermes-agent Python closure from source
+    // (first deploy OOMs the disk on pynacl/pyproject wheels). 30 GB is
+    // a safe floor with headroom; raise via hermes.toml for heavier
+    // deployments.
+    disk_gb: z.number().int().min(8).max(500).default(30),
   })
   .refine(c => c.provider !== 'gcp' || !!c.zone, {
     message: 'cloud.zone is required when cloud.provider = "gcp"',

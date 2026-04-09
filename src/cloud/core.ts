@@ -21,6 +21,7 @@ export interface ProvisionSpec {
   deploymentName: string;
   location: Location;
   size: Size;
+  diskGb: number;             // root volume size in GB
   image: ImageRef;
   publicSshKey: string;       // OpenSSH-format public key line
   networkRules: NetworkRules;

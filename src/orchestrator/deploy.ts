@@ -87,6 +87,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
     deploymentName: config.name,
     location: { region: config.cloud.region, zone: config.cloud.zone },
     size: config.cloud.size,
+    diskGb: config.cloud.disk_gb,
     image,
     publicSshKey: sshPublicKey,
     networkRules: {

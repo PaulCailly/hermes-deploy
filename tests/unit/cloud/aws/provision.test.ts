@@ -23,6 +23,7 @@ describe('provisionAws', () => {
     deploymentName: 'test',
     location: { region: 'eu-west-3' },
     size: 'small',
+    diskGb: 30,
     image: { id: 'ami-1', description: 'nixos' },
     publicSshKey: 'ssh-ed25519 AAAA test',
     networkRules: { sshAllowedFrom: '203.0.113.1/32', inboundPorts: [443] },
@@ -56,6 +57,23 @@ describe('provisionAws', () => {
     expect(ledger.kind === 'aws' && ledger.resources.instance_id).toBe('i-1');
     expect(ledger.kind === 'aws' && ledger.resources.security_group_id).toBe('sg-1');
     expect(ledger.kind === 'aws' && ledger.resources.eip_allocation_id).toBe('eipalloc-1');
+
+    // RunInstances must override the AMI's default 5 GB root volume so
+    // the hermes-agent build has enough space. Verify the diskGb from
+    // spec flows into BlockDeviceMappings on /dev/xvda.
+    const runCalls = ec2Mock.commandCalls(RunInstancesCommand);
+    expect(runCalls).toHaveLength(1);
+    const bdm = runCalls[0]!.args[0].input.BlockDeviceMappings;
+    expect(bdm).toEqual([
+      {
+        DeviceName: '/dev/xvda',
+        Ebs: {
+          VolumeSize: 30,
+          VolumeType: 'gp3',
+          DeleteOnTermination: true,
+        },
+      },
+    ]);
   });
 
   it('rolls back resources created so far if RunInstances fails', async () => {
