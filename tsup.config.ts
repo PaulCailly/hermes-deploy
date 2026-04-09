@@ -8,5 +8,9 @@ export default defineConfig({
   sourcemap: true,
   minify: false,
   splitting: false,
-  banner: { js: '#!/usr/bin/env node' },
+  // env -S splits the rest into args; --no-warnings suppresses Node's
+  // ExperimentalWarning chatter (e.g. JSON module imports from a
+  // transitive dep) that would otherwise leak into stderr on every CLI
+  // invocation and break scripting use cases.
+  banner: { js: '#!/usr/bin/env -S node --no-warnings' },
 });
