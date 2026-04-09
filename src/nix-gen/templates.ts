@@ -3,7 +3,7 @@ export const CONFIGURATION_NIX = `{ config, pkgs, lib, ... }:
   imports = [
     <nixpkgs/nixos/modules/virtualisation/amazon-image.nix>
     "\${builtins.fetchTarball {
-      url = \\"https://github.com/NousResearch/hermes-agent/archive/refs/heads/main.tar.gz\\";
+      url = "https://github.com/NousResearch/hermes-agent/archive/refs/heads/main.tar.gz";
     }}/nix/module.nix"
     ./hermes.nix
   ];
