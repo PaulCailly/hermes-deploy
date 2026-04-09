@@ -18,10 +18,10 @@ export async function runDestroy(opts: DestroyOptions): Promise<void> {
     throw new Error(`deployment "${opts.deploymentName}" not found in state`);
   }
 
-  const ledger: ResourceLedger = {
-    kind: 'aws',
-    resources: { ...(deployment.cloud_resources as any) },
-  };
+  const ledger: ResourceLedger =
+    deployment.cloud === 'aws'
+      ? { kind: 'aws', resources: { ...deployment.cloud_resources } }
+      : { kind: 'gcp', resources: { ...deployment.cloud_resources } };
 
   reporter.phaseStart('provision', `Destroying ${opts.deploymentName} on ${deployment.cloud}`);
   await opts.provider.destroy(ledger);

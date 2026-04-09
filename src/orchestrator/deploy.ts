@@ -81,7 +81,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
       ? await opts.detectPublicIp()
       : config.network.ssh_allowed_from;
 
-  const ledger: ResourceLedger = { kind: 'aws', resources: {} };
+  const ledger: ResourceLedger = { kind: config.cloud.provider, resources: {} };
   const spec: ProvisionSpec = {
     deploymentName: config.name,
     location: { region: config.cloud.region, zone: config.cloud.zone },
@@ -96,28 +96,30 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   const instance = await opts.provider.provision(spec, ledger);
 
   // Persist ledger BEFORE SSH bootstrap
-  await store.update(state => {
-    const now = new Date().toISOString();
-    state.deployments[config.name] = {
-      project_path: opts.projectDir,
-      cloud: 'aws',
-      region: config.cloud.region,
-      created_at: state.deployments[config.name]?.created_at ?? now,
-      last_deployed_at: now,
-      last_config_hash: 'pending', // updated in phase 5
-      ssh_key_path: sshKeyPath,
-      age_key_path: ageKeyPath,
-      health: 'unknown',
-      instance_ip: instance.publicIp,
-      cloud_resources: {
-        instance_id: ledger.resources.instance_id!,
-        security_group_id: ledger.resources.security_group_id!,
-        key_pair_name: ledger.resources.key_pair_name!,
-        eip_allocation_id: ledger.resources.eip_allocation_id!,
-        region: ledger.resources.region!,
-      },
-    };
-  });
+  if (ledger.kind === 'aws') {
+    await store.update(state => {
+      const now = new Date().toISOString();
+      state.deployments[config.name] = {
+        project_path: opts.projectDir,
+        cloud: 'aws',
+        region: config.cloud.region,
+        created_at: state.deployments[config.name]?.created_at ?? now,
+        last_deployed_at: now,
+        last_config_hash: 'pending', // updated in phase 5
+        ssh_key_path: sshKeyPath,
+        age_key_path: ageKeyPath,
+        health: 'unknown',
+        instance_ip: instance.publicIp,
+        cloud_resources: {
+          instance_id: ledger.resources.instance_id!,
+          security_group_id: ledger.resources.security_group_id!,
+          key_pair_name: ledger.resources.key_pair_name!,
+          eip_allocation_id: ledger.resources.eip_allocation_id!,
+          region: ledger.resources.region!,
+        },
+      };
+    });
+  }
   reporter.phaseDone('provision');
 
   // === Phase 3 — wait for SSH ===

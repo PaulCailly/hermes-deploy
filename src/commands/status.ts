@@ -28,10 +28,11 @@ export async function statusCommand(opts: { name?: string }): Promise<void> {
     imageCacheFile: paths.imageCacheFile,
   });
 
-  const live = await provider.status({
-    kind: 'aws',
-    resources: deployment.cloud_resources as any,
-  });
+  const live = await provider.status(
+    deployment.cloud === 'aws'
+      ? { kind: 'aws', resources: deployment.cloud_resources }
+      : { kind: 'gcp', resources: deployment.cloud_resources },
+  );
 
   console.log(`Deployment:    ${name}`);
   console.log(`  Cloud:       ${deployment.cloud}`);
