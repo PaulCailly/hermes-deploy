@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { upCommand } from './commands/up.js';
 import { destroyCommand } from './commands/destroy.js';
 import { statusCommand } from './commands/status.js';
+import { sshCommand } from './commands/ssh.js';
 
 const program = new Command();
 
@@ -43,6 +44,18 @@ program
       await statusCommand({ name });
     } catch (e) {
       console.error(`hermes-deploy status: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('ssh')
+  .argument('[name]', 'deployment name (defaults to ./hermes.toml)')
+  .action(async (name) => {
+    try {
+      await sshCommand({ name });
+    } catch (e) {
+      console.error(`hermes-deploy ssh: ${(e as Error).message}`);
       process.exit(1);
     }
   });
