@@ -3,13 +3,10 @@ import { join, resolve as pathResolve } from 'node:path';
 import { loadHermesToml, HermesTomlError } from '../schema/load.js';
 import { StateStore } from '../state/store.js';
 import { getStatePaths } from '../state/paths.js';
-import { computeConfigHash } from '../state/hash.js';
-import { generateHermesNix, generateConfigurationNix, generateFlakeNix } from '../nix-gen/generate.js';
-import { runNixosRebuild } from '../remote-ops/nixos-rebuild.js';
-import { pollHermesHealth } from '../remote-ops/healthcheck.js';
 import type { CloudProvider, ProvisionSpec, ResourceLedger } from '../cloud/core.js';
 import type { SshSession } from '../remote-ops/session.js';
 import { createPlainReporter, type Reporter } from './reporter.js';
+import { uploadAndRebuild, recordConfigAndHealthcheck } from './shared.js';
 
 export interface DeployOptions {
   projectDir: string;
@@ -134,52 +131,25 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   const privateKeyContent = readFileSync(sshKeyPath, 'utf-8');
   const session = await opts.sessionFactory(instance.publicIp, privateKeyContent);
   try {
-    const flakeNix = generateFlakeNix();
-    const configurationNix = generateConfigurationNix(config);
-    const hermesNix = generateHermesNix(config);
-    const ageKeyContent = readFileSync(ageKeyPath, 'utf-8');
-    const secretsContent = readFileSync(
-      pathResolve(opts.projectDir, config.hermes.secrets_file),
-    );
-
-    await session.uploadFile('/etc/nixos/flake.nix', flakeNix);
-    await session.uploadFile('/etc/nixos/configuration.nix', configurationNix);
-    await session.uploadFile('/etc/nixos/hermes.nix', hermesNix);
-    await session.uploadFile('/etc/nixos/secrets.enc.yaml', secretsContent);
-    // sops-nix creates /var/lib/sops-nix on activation, but we need the dir
-    // to exist before SFTP can drop the age key there on the very first
-    // rebuild. mkdir -p is idempotent on subsequent deploys.
-    await session.exec('mkdir -p /var/lib/sops-nix');
-    await session.uploadFile('/var/lib/sops-nix/age.key', ageKeyContent, 0o600);
-
-    const rebuild = await runNixosRebuild(session, (_s, line) => reporter.log(line));
-    if (!rebuild.success) {
-      throw new Error(`nixos-rebuild failed:\n${rebuild.tail.join('\n')}`);
-    }
+    await uploadAndRebuild({
+      session,
+      projectDir: opts.projectDir,
+      config,
+      ageKeyPath,
+      reporter,
+    });
     reporter.phaseDone('bootstrap');
 
     // === Phase 5 — healthcheck and state update ===
     reporter.phaseStart('healthcheck', 'Waiting for hermes-agent.service');
-    const configHash = computeConfigHash(
-      [
-        tomlPath,
-        pathResolve(opts.projectDir, config.hermes.secrets_file),
-        config.hermes.nix_extra
-          ? pathResolve(opts.projectDir, config.hermes.nix_extra.file)
-          : '',
-      ].filter(Boolean),
-      true,
-    );
-
-    await store.update(state => {
-      const d = state.deployments[config.name]!;
-      d.last_config_hash = configHash;
-      d.last_deployed_at = new Date().toISOString();
-    });
-
-    const health = await pollHermesHealth(session, { timeoutMs: opts.healthcheckTimeoutMs });
-    await store.update(state => {
-      state.deployments[config.name]!.health = health.health;
+    const health = await recordConfigAndHealthcheck({
+      session,
+      store,
+      deploymentName: config.name,
+      projectDir: opts.projectDir,
+      tomlPath,
+      config,
+      healthcheckTimeoutMs: opts.healthcheckTimeoutMs,
     });
 
     if (health.health === 'unhealthy') {

@@ -2,7 +2,18 @@
 
 A CLI for deploying [hermes-agent](https://hermes-agent.nousresearch.com/) to a cloud VPS in one command.
 
-> **Status: M1 (AWS skateboard).** This release supports AWS only, with `up`, `destroy`, `status`, and `ssh`. No `update`, no GCP, no Ink UI yet. See `docs/specs/2026-04-09-hermes-deploy-design.md` for the full v1 design.
+> **Status: M2 (AWS feature-complete).** Full lifecycle on AWS:
+> `init`, `up`, `update`, `destroy`, `status`, `logs`, `ssh`, `ls`,
+> `secret set/get/rm/list/edit`, `key export/import/path`. Ink TUI on TTY.
+> GCP coming in M3 alongside the `hermes.toml` schema redesign.
+
+## Quick links
+
+- **[Getting started](docs/getting-started.md)** — five-minute walkthrough from `init` to a running agent
+- **[hermes.toml schema reference](docs/schema-reference.md)** — every field, every default
+- **[Multi-machine key sync](docs/multi-machine-key-sync.md)** — moving a deployment between machines
+- **[v1 design spec](docs/specs/2026-04-09-hermes-deploy-design.md)** — the architectural decisions
+- **[M1 plan](docs/plans/2026-04-09-hermes-deploy-M1-aws-skateboard.md)** and **[M2 plan](docs/plans/2026-04-09-hermes-deploy-M2-aws-feature-complete.md)** — implementation breakdowns
 
 ## Prerequisites
 
@@ -10,7 +21,7 @@ On the machine running `hermes-deploy`:
 
 - Node 20 or newer
 - `age-keygen` and `sops` on PATH (`brew install age sops` on macOS)
-- `ssh` on PATH
+- `ssh` and `ssh-keygen` on PATH (ships with macOS / standard on Linux)
 - AWS credentials configured (`~/.aws/credentials` or `AWS_*` env vars)
 
 On the AWS account:
@@ -18,85 +29,74 @@ On the AWS account:
 - An IAM user/role with permissions to create EC2 key pairs, security groups, instances, and elastic IPs
 - A region where NixOS publishes community AMIs (e.g. `us-east-1`, `eu-west-3`, `ap-southeast-1`)
 
-## Install (M1: from source)
+## Install (from source for now)
 
 ```bash
-git clone <this repo>
+git clone git@github.com:PaulCailly/hermes-deploy.git
 cd hermes-deploy
 npm install
 npm run build
 npm link  # makes `hermes-deploy` available globally
 ```
 
-## Smoke test: deploy, status, ssh, destroy
+A proper npm release lands in M4.
 
-Create a project directory:
-
-```bash
-mkdir -p ~/hermes-test/discord-bot && cd ~/hermes-test/discord-bot
-cat > hermes.toml <<'EOF'
-name = "smoketest"
-
-[cloud]
-provider = "aws"
-profile = "default"
-region = "eu-west-3"
-size = "small"
-
-[hermes]
-model = "anthropic/claude-sonnet-4-5"
-soul = "./SOUL.md"
-secrets_file = "./secrets.enc.yaml"
-
-[hermes.platforms.discord]
-enabled = true
-token_key = "discord_bot_token"
-EOF
-
-cat > SOUL.md <<'EOF'
-# Smoke test soul
-You are a helpful test bot.
-EOF
-```
-
-Run `hermes-deploy up`. The CLI will:
-
-1. Validate the config.
-2. Generate an ed25519 SSH keypair under `~/.config/hermes-deploy/ssh_keys/smoketest`.
-3. Generate an age keypair under `~/.config/hermes-deploy/age_keys/smoketest`.
-4. Create `.sops.yaml` and an empty encrypted `secrets.enc.yaml` in the project dir.
-5. Resolve the latest NixOS AMI for `eu-west-3`.
-6. Provision a `t3.small` with a security group allowing SSH from your current public IP.
-7. SSH in, upload `configuration.nix`, `hermes.nix`, `secrets.enc.yaml`, and the age key.
-8. Run `nixos-rebuild switch` (3-8 minutes on first deploy — Nix store is cold).
-9. Wait for `hermes-agent.service` to be active.
-
-You'll need to add real secrets before the agent can connect to Discord:
+## Commands at a glance
 
 ```bash
-sops secrets.enc.yaml
-# add: discord_bot_token: "<real bot token>"
+hermes-deploy init                                # scaffold a new project here
+hermes-deploy up                                  # provision + configure + start
+hermes-deploy update                              # push config changes to existing instance
+hermes-deploy status [name]                       # show stored + live state
+hermes-deploy logs [name]                         # stream journalctl until Ctrl-C
+hermes-deploy ssh [name]                          # interactive shell on the box
+hermes-deploy ls                                  # list all deployments across clouds
+hermes-deploy destroy [name] --yes                # tear down completely
+
+hermes-deploy secret set <key> <value>            # add a secret
+hermes-deploy secret get <key>                    # print a secret
+hermes-deploy secret list                         # list secret keys
+hermes-deploy secret rm <key>                     # delete a secret
+hermes-deploy secret edit                         # open the sops editor
+
+hermes-deploy key export <name>                   # write age key to stdout
+hermes-deploy key import <name> <path>            # copy an age key into config
+hermes-deploy key path <name>                     # print the on-disk path
 ```
 
-Then re-run the relevant pieces by hand (no `update` command in M1):
+Every command that operates on a deployment supports `--name <name>` and `--project <path>` flags. Without either flag, the command walks up from cwd to find a `hermes.toml`.
+
+## Five-minute walkthrough
 
 ```bash
-hermes-deploy ssh smoketest
-# inside the box:
-sudo nixos-rebuild switch
+mkdir -p ~/clients/acme/discord-bot && cd ~/clients/acme/discord-bot
+hermes-deploy init                                # scaffolds hermes.toml + SOUL.md + .gitignore
+$EDITOR hermes.toml                               # set region, size, model, etc.
+$EDITOR SOUL.md                                   # set agent personality
+hermes-deploy up                                  # provision + boot + nixos-rebuild
+hermes-deploy logs                                # stream the agent's journalctl
+$EDITOR hermes.toml                               # iterate
+hermes-deploy update                              # ~30-90s on a warm box
+hermes-deploy destroy --yes                       # tear it all down
 ```
 
-Inspect:
+See [docs/getting-started.md](docs/getting-started.md) for a longer version with explanations.
 
-```bash
-hermes-deploy status smoketest
+## Ink UI
+
+`hermes-deploy up` and `hermes-deploy update` automatically render a live timeline view (phase rows with spinners + tail of `nixos-rebuild` output) when stdout is a TTY. Pipes, redirects, and CI runs get a plain stdout reporter. Force the plain reporter with `--no-ink` or `HERMES_DEPLOY_NO_INK=1`.
+
+## Cachix substituter (optional, for faster first deploys)
+
+The first deploy compiles hermes-agent's Python closure from source — about 10-15 minutes on a `t3.large`. To skip the build, point at a Cachix cache:
+
+```toml
+[hermes.cachix]
+name       = "your-cache-name"
+public_key = "your-cache-name.cachix.org-1:xxxxx"
 ```
 
-Tear down:
-
-```bash
-hermes-deploy destroy smoketest --yes
-```
+Once the cache is populated (run `cachix push <name> /run/current-system` from the box after a successful first deploy), subsequent first-deploys substitute the closure instead of building it. See [docs/getting-started.md](docs/getting-started.md#optional-cachix) for the full setup.
 
 ## State and key file locations
 
@@ -105,9 +105,13 @@ hermes-deploy destroy smoketest --yes
 - `~/.config/hermes-deploy/age_keys/<name>` — per-deployment age private key
 - `~/.cache/hermes-deploy/images.json` — 1-hour AMI lookup cache
 
-## What's deferred to M2
+## What's deferred to M3+
 
-`update`, `logs`, `ls`, `init`, `secret` subcommands, `--name` flag for cross-directory lookup, multi-instance management, schema migrations, Ink UI, GCP. See `docs/plans/` for the M2 plan when it lands.
+- **GCP provider implementation**
+- **`hermes.toml` schema redesign** against upstream's actual `services.hermes-agent.{settings, environmentFiles, documents, mcpServers}` options. The current schema's `soul`/`platforms`/`mcp_servers`/`secrets_file` fields are accepted but the generator only emits `services.hermes-agent.settings.model.default` and the optional `nix_extra` import. The migration scaffold from M2 (Phase G) is positioned to handle the v1→v2 schema migration.
+- **Pre-baked AMI pipeline** for sub-2-minute first deploys
+- **Cachix population workflow** (right now you populate the cache by hand)
+- **GitHub Actions CI / release-please / npm publish**
 
 ## License
 

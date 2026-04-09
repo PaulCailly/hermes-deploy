@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import { StateTomlSchema, type StateToml } from '../schema/state-toml.js';
+import { runMigrations } from './migrations.js';
 
 interface StorePaths {
   configDir: string;
@@ -21,7 +22,13 @@ export class StateStore {
     }
     const raw = readFileSync(this.paths.stateFile, 'utf-8');
     const parsed = parseToml(raw);
-    const result = StateTomlSchema.safeParse(parsed);
+    // Run forward migrations before validation so older state files
+    // (or future ones with extra fields the migration adds) become
+    // valid v1 input. M2 ships with a v0→v1 migration scaffold; v0
+    // never shipped, but the runner is exercised so M3 can drop in
+    // a v2 migration cleanly.
+    const migrated = runMigrations(parsed);
+    const result = StateTomlSchema.safeParse(migrated);
     if (!result.success) {
       const issues = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
       throw new Error(`state.toml failed validation: ${issues}`);

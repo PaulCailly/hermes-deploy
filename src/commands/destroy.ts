@@ -1,23 +1,26 @@
-import { findUp } from './find-project.js';
-import { loadHermesToml } from '../schema/load.js';
+import { resolveDeployment } from './resolve.js';
 import { runDestroy } from '../orchestrator/destroy.js';
 import { createCloudProvider } from '../cloud/factory.js';
 import { getStatePaths } from '../state/paths.js';
 import { StateStore } from '../state/store.js';
 import { createInterface } from 'node:readline/promises';
 
-export async function destroyCommand(opts: { name?: string; yes?: boolean }): Promise<void> {
+export interface DestroyOptions {
+  name?: string;
+  projectPath?: string;
+  yes?: boolean;
+}
+
+export async function destroyCommand(opts: DestroyOptions): Promise<void> {
+  const { name } = await resolveDeployment({
+    name: opts.name,
+    projectPath: opts.projectPath,
+    cwd: process.cwd(),
+  });
+
   const paths = getStatePaths();
   const store = new StateStore(paths);
   const state = await store.read();
-
-  let name = opts.name;
-  if (!name) {
-    const projectDir = findUp(process.cwd(), 'hermes.toml');
-    if (!projectDir) throw new Error('no name given and no hermes.toml in cwd');
-    name = loadHermesToml(`${projectDir}/hermes.toml`).name;
-  }
-
   const deployment = state.deployments[name];
   if (!deployment) throw new Error(`deployment "${name}" not found in state`);
 

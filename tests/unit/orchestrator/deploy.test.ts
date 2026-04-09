@@ -22,6 +22,7 @@ function fakeProvider(): CloudProvider {
       }
       return { publicIp: '203.0.113.42', sshUser: 'root' };
     }),
+    reconcileNetwork: vi.fn(async () => {}),
     destroy: vi.fn(async () => {}),
     status: vi.fn(async () => ({ state: 'running' as const, publicIp: '203.0.113.42' })),
   };
@@ -31,6 +32,7 @@ function fakeSession(): SshSession {
   return {
     exec: vi.fn(async () => ({ exitCode: 0, stdout: 'active', stderr: '' })),
     execStream: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+    execStreamUntil: vi.fn(async () => ({ aborted: false, exitCode: 0 })),
     uploadFile: vi.fn(async () => {}),
     dispose: vi.fn(async () => {}),
   };
@@ -151,7 +153,8 @@ token_key = "k"
         return { exitCode: 3, stdout: 'inactive', stderr: '' };
       }),
       execStream: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
-      uploadFile: vi.fn(async () => {}),
+      execStreamUntil: vi.fn(async () => ({ aborted: false, exitCode: 0 })),
+    uploadFile: vi.fn(async () => {}),
       dispose: vi.fn(async () => {}),
     });
 
