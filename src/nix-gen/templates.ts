@@ -64,7 +64,7 @@ const VIRT_MODULE: Record<string, string> = {
   gcp: 'google-compute-image.nix',
 };
 
-export function configurationNix(provider: 'aws' | 'gcp', cachix?: CachixConfig): string {
+export function configurationNix(provider: 'aws' | 'gcp', sshPublicKey?: string, cachix?: CachixConfig): string {
   const virtModule = VIRT_MODULE[provider];
   const substitutersBlock = cachix
     ? `
@@ -96,6 +96,16 @@ ${substitutersBlock}
     settings.PasswordAuthentication = false;
     settings.PermitRootLogin = "prohibit-password";
   };
+${sshPublicKey ? `
+  # Bake the deployment SSH key into the NixOS config so it survives
+  # nixos-rebuild activation. On GCE with nixos-infect, the rebuild
+  # removes /etc/ssh/authorized_keys.d/root (set by the guest agent
+  # on the Debian base). Without this line, root SSH access is lost
+  # after the first rebuild. On AWS this is redundant (amazon-image.nix
+  # handles it via cloud-init) but harmless.
+  users.users.root.openssh.authorizedKeys.keys = [
+    "${sshPublicKey}"
+  ];` : ''}
 
   networking.firewall.enable = true;
 

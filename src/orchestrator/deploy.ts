@@ -192,6 +192,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
       projectDir: opts.projectDir,
       config,
       ageKeyPath,
+      sshPublicKey: sshPublicKey,
       reporter,
     });
     reporter.phaseDone('bootstrap');

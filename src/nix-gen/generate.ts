@@ -1,8 +1,8 @@
 import type { HermesTomlConfig } from '../schema/hermes-toml.js';
 import { configurationNix, FLAKE_NIX } from './templates.js';
 
-export function generateConfigurationNix(config: HermesTomlConfig): string {
-  return configurationNix(config.cloud.provider, config.hermes.cachix);
+export function generateConfigurationNix(config: HermesTomlConfig, sshPublicKey?: string): string {
+  return configurationNix(config.cloud.provider, sshPublicKey, config.hermes.cachix);
 }
 
 export function generateFlakeNix(): string {

@@ -55,6 +55,7 @@ export interface BootstrapArgs {
   projectDir: string;
   config: HermesTomlConfig;
   ageKeyPath: string;
+  sshPublicKey?: string;
   reporter: Reporter;
 }
 
@@ -71,7 +72,7 @@ export interface BootstrapArgs {
 export async function uploadAndRebuild(args: BootstrapArgs): Promise<void> {
   const { session, projectDir, config, ageKeyPath, reporter } = args;
   const flakeNix = generateFlakeNix();
-  const configurationNix = generateConfigurationNix(config);
+  const configurationNix = generateConfigurationNix(config, args.sshPublicKey);
   const hermesNix = generateHermesNix(config);
   const ageKeyContent = readFileSync(ageKeyPath, 'utf-8');
 

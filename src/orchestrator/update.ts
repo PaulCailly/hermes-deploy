@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve as pathResolve } from 'node:path';
 import { loadHermesToml } from '../schema/load.js';
 import { StateStore } from '../state/store.js';
@@ -132,11 +132,18 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   const privateKeyContent = readFileSync(deployment.ssh_key_path, 'utf-8');
   const session = await opts.sessionFactory(deployment.instance_ip, privateKeyContent);
   try {
+    // Read the SSH public key so the generated configuration.nix bakes
+    // it into users.users.root.openssh.authorizedKeys.keys. Without this,
+    // nixos-rebuild removes the guest-agent-managed authorized key and
+    // root SSH access is lost on GCE (and harmlessly redundant on AWS).
+    const sshPubKeyPath = `${deployment.ssh_key_path}.pub`;
+    const sshPublicKey = existsSync(sshPubKeyPath) ? readFileSync(sshPubKeyPath, 'utf-8').trim() : undefined;
     await uploadAndRebuild({
       session,
       projectDir: deployment.project_path,
       config,
       ageKeyPath: deployment.age_key_path,
+      sshPublicKey,
       reporter,
     });
     reporter.phaseDone('bootstrap');
