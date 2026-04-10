@@ -1,9 +1,10 @@
 export const HERMES_TOML_TEMPLATE = (name: string) => `name = "${name}"
 
 [cloud]
-provider = "aws"        # "aws" (M2/M3) or "gcp" (coming in M4)
+provider = "aws"        # "aws" or "gcp"
 profile  = "default"     # AWS profile name or GCP project id
 region   = "eu-west-3"
+# zone   = "europe-west1-b"  # required when provider = "gcp"
 size     = "large"       # "small" | "medium" | "large"
                          # IMPORTANT: the first hermes-agent build needs
                          # ~6 GB RAM. "small" (t3.small, 2 GB) will OOM-
