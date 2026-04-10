@@ -18,6 +18,7 @@ describe('StateTomlSchema', () => {
           created_at: '2026-04-09T14:23:11Z',
           last_deployed_at: '2026-04-09T14:31:42Z',
           last_config_hash: 'sha256:abc123',
+          last_nix_hash: 'sha256:abc123',
           ssh_key_path: '/Users/paul/.config/hermes-deploy/ssh_keys/acme-discord-bot',
           age_key_path: '/Users/paul/.config/hermes-deploy/age_keys/acme-discord-bot',
           health: 'healthy',

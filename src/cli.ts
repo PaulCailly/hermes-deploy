@@ -21,7 +21,7 @@ const program = new Command();
 program
   .name('hermes-deploy')
   .description('Deploy hermes-agent to AWS or GCP')
-  .version('0.3.0-m3');
+  .version('0.4.0-m4');
 
 program
   .command('init')

@@ -80,6 +80,7 @@ function makeDeployment(name = 'test') {
     created_at: '2026-04-09T00:00:00Z',
     last_deployed_at: '2026-04-09T00:00:00Z',
     last_config_hash: 'sha256:abc',
+    last_nix_hash: 'sha256:abc',
     ssh_key_path: `/x/${name}`,
     age_key_path: `/x/${name}`,
     health: 'unknown' as const,
