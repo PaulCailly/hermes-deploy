@@ -1,17 +1,15 @@
 import type { CloudProvider } from './core.js';
 import { AwsProvider } from './aws/provider.js';
+import { GcpProvider } from './gcp/provider.js';
 
 export interface CreateProviderOptions {
   provider: 'aws' | 'gcp';
   region: string;
+  zone?: string;
   profile?: string;
   imageCacheFile: string;
 }
 
-/**
- * Construct a CloudProvider for the given cloud + region. M1 supports
- * `aws` only. M3 will add the `gcp` branch when GcpProvider lands.
- */
 export function createCloudProvider(opts: CreateProviderOptions): CloudProvider {
   switch (opts.provider) {
     case 'aws':
@@ -21,6 +19,12 @@ export function createCloudProvider(opts: CreateProviderOptions): CloudProvider 
         imageCacheFile: opts.imageCacheFile,
       });
     case 'gcp':
-      throw new Error('M1 does not support GCP yet — coming in M3');
+      if (!opts.zone) {
+        throw new Error('cloud.zone is required when provider = "gcp"');
+      }
+      return new GcpProvider({
+        zone: opts.zone,
+        imageCacheFile: opts.imageCacheFile,
+      });
   }
 }
