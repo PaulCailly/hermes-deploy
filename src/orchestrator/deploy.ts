@@ -66,11 +66,13 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   reporter.phaseDone('ensure-keys');
 
   // === Phase 2 — provision ===
-  reporter.phaseStart('provision', 'Provisioning AWS resources');
-  const image = await opts.provider.resolveNixosImage({
-    region: config.cloud.region,
-    zone: config.cloud.zone,
-  });
+  reporter.phaseStart('provision', 'Provisioning cloud resources');
+  const image = config.cloud.image
+    ? { id: config.cloud.image, description: 'user-provided image' }
+    : await opts.provider.resolveNixosImage({
+        region: config.cloud.region,
+        zone: config.cloud.zone,
+      });
   const sshAllowedFrom =
     config.network.ssh_allowed_from === 'auto'
       ? await opts.detectPublicIp()

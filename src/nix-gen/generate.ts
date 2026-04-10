@@ -2,7 +2,7 @@ import type { HermesTomlConfig } from '../schema/hermes-toml.js';
 import { configurationNix, FLAKE_NIX } from './templates.js';
 
 export function generateConfigurationNix(config: HermesTomlConfig): string {
-  return configurationNix(config.hermes.cachix);
+  return configurationNix(config.cloud.provider, config.hermes.cachix);
 }
 
 export function generateFlakeNix(): string {

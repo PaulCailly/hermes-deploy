@@ -45,20 +45,27 @@ export interface CachixConfig {
 }
 
 /**
- * configuration.nix is the host-level NixOS config (imports amazon-image
- * so the instance boots correctly as an EC2 VM, enables flakes so
- * nixos-rebuild can re-evaluate the flake later, opens sshd, turns on
- * the firewall). It explicitly does NOT import hermes-agent — the flake
- * does that via the modules list above. It also explicitly does NOT
- * declare any hermes-agent options — those live in ./hermes.nix which
- * is the generator's output.
+ * configuration.nix is the host-level NixOS config. It imports the
+ * cloud-specific virtualisation module so the instance boots correctly:
+ *   - AWS (EC2):  virtualisation/amazon-image.nix
+ *   - GCP (GCE):  virtualisation/google-compute-image.nix
+ *
+ * It enables flakes, opens sshd, turns on the firewall, and wires
+ * sops-nix for secret decryption. It explicitly does NOT import
+ * hermes-agent — the flake does that via the modules list above.
  *
  * If a Cachix cache is configured (via [hermes.cachix] in hermes.toml),
  * the substituter and trusted-public-key are appended to nix.settings so
  * subsequent rebuilds substitute the hermes-agent closure from binary
  * cache instead of compiling from source.
  */
-export function configurationNix(cachix?: CachixConfig): string {
+const VIRT_MODULE: Record<string, string> = {
+  aws: 'amazon-image.nix',
+  gcp: 'google-compute-image.nix',
+};
+
+export function configurationNix(provider: 'aws' | 'gcp', cachix?: CachixConfig): string {
+  const virtModule = VIRT_MODULE[provider];
   const substitutersBlock = cachix
     ? `
   nix.settings = {
@@ -77,7 +84,7 @@ export function configurationNix(cachix?: CachixConfig): string {
   return `{ config, pkgs, lib, modulesPath, ... }:
 {
   imports = [
-    "\${modulesPath}/virtualisation/amazon-image.nix"
+    "\${modulesPath}/virtualisation/${virtModule}"
   ];
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];

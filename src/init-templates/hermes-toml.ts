@@ -13,6 +13,10 @@ size     = "large"       # "small" | "medium" | "large"
                          # once Cachix is populated.
 disk_gb  = 30            # root volume size; first hermes-agent build
                          # needs at least 20 GB free
+# image  = "..."         # optional: override the NixOS image.
+                         # AWS: ami-xxx  GCP: projects/<proj>/global/images/<name>
+                         # If unset, hermes-deploy resolves the latest NixOS 25.11 image.
+                         # Set this if the public NixOS images have permission issues.
 
 [network]
 ssh_allowed_from = "auto"   # "auto" = your current public IP, or a CIDR
