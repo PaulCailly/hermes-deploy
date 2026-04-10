@@ -125,6 +125,12 @@ export async function secretSet(
   const ctx = await getContext(opts.name, opts.projectPath);
   const data = await readSecrets(ctx);
   data[opts.key] = opts.value;
+
+  // Remove the bootstrap placeholder once a real secret is set.
+  if (opts.key !== '_HERMES_DEPLOY_PLACEHOLDER') {
+    delete data['_HERMES_DEPLOY_PLACEHOLDER'];
+  }
+
   writeSecrets(ctx, data);
 }
 
