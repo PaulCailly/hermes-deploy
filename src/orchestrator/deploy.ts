@@ -158,7 +158,21 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   // NixOS. This step is skipped on AWS (which uses community NixOS AMIs directly).
   if (config.cloud.provider === 'gcp') {
     reporter.phaseStart('bootstrap', 'Converting Debian to NixOS via nixos-infect (~5 min)');
-    const infectSession = await opts.sessionFactory(instance.publicIp, readFileSync(sshKeyPath, 'utf-8'));
+    // The Debian startup script restarts sshd after enabling root login.
+    // waitSsh may return before the restart completes, so retry the
+    // session creation a few times on ECONNREFUSED.
+    let infectSession: import('../remote-ops/session.js').SshSession | undefined;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        infectSession = await opts.sessionFactory(instance.publicIp, readFileSync(sshKeyPath, 'utf-8'));
+        break;
+      } catch (e) {
+        if (attempt >= 9) throw e;
+        reporter.log(`  (SSH not ready, retrying in 3s... attempt ${attempt + 1}/10)`);
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+    if (!infectSession) throw new Error('Failed to connect for nixos-infect');
     try {
       reporter.log('Running nixos-infect...');
       const infectResult = await infectSession.execStream(
