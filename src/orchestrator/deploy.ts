@@ -152,8 +152,38 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   await opts.waitSsh(instance.publicIp);
   reporter.phaseDone('wait-ssh');
 
+  // === Phase 3.5 (GCP only) — nixos-infect ===
+  // nixos-cloud images are not publicly usable (403 on compute.images.useReadOnly).
+  // The standard workaround is to boot Debian, then run nixos-infect to convert to
+  // NixOS. This step is skipped on AWS (which uses community NixOS AMIs directly).
+  if (config.cloud.provider === 'gcp') {
+    reporter.phaseStart('bootstrap', 'Converting Debian to NixOS via nixos-infect (~5 min)');
+    const infectSession = await opts.sessionFactory(instance.publicIp, readFileSync(sshKeyPath, 'utf-8'));
+    try {
+      reporter.log('Running nixos-infect...');
+      const infectResult = await infectSession.execStream(
+        'curl -L https://raw.githubusercontent.com/elitak/nixos-infect/master/nixos-infect | NIX_CHANNEL=nixos-25.11 bash -x 2>&1',
+        (_s, line) => reporter.log(line),
+      );
+      if (infectResult.exitCode !== 0) {
+        throw new Error(`nixos-infect failed with exit code ${infectResult.exitCode}`);
+      }
+    } finally {
+      await infectSession.dispose();
+    }
+
+    // nixos-infect reboots the system. Wait for SSH to come back up.
+    // The host key changes (new NixOS system), so ssh2's strict host
+    // checking is already off (UserKnownHostsFile=/dev/null in ssh.ts).
+    reporter.log('Waiting for NixOS to boot after nixos-infect...');
+    await opts.waitSsh(instance.publicIp);
+    reporter.phaseDone('bootstrap');
+    reporter.phaseStart('bootstrap', 'Uploading config and running nixos-rebuild');
+  } else {
+    reporter.phaseStart('bootstrap', 'Uploading config and running nixos-rebuild');
+  }
+
   // === Phase 4 — bootstrap NixOS configuration ===
-  reporter.phaseStart('bootstrap', 'Uploading config and running nixos-rebuild');
   const privateKeyContent = readFileSync(sshKeyPath, 'utf-8');
   const session = await opts.sessionFactory(instance.publicIp, privateKeyContent);
   try {

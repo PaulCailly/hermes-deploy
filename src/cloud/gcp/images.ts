@@ -1,29 +1,34 @@
 import type { ImageRef } from '../core.js';
 
 /**
- * For GCP, NixOS publishes community images under the `nixos-cloud`
- * project with image families like `nixos-25-11`. Unlike AWS (where we
- * call DescribeImages to find the latest AMI), GCP lets us reference
- * images by family URL directly in the instance creation call — GCE
- * resolves the family to the latest image at creation time.
+ * GCP NixOS image strategy: boot a Debian instance, then nixos-infect.
  *
- * This avoids the IAM issue where `compute.images.list` and
- * `compute.images.getFromFamily` require permissions on the
- * `nixos-cloud` project that ADC users don't have by default.
- * Using the family URL in `sourceImage` only needs
- * `compute.instances.create` on YOUR project, which is always granted.
+ * nixos-cloud publishes NixOS GCE images, but they require
+ * `compute.images.useReadOnly` permission on the `nixos-cloud` project
+ * which ADC users don't have. Neither user credentials nor service
+ * account impersonation grants this — it's a project-level IAM issue
+ * on nixos-cloud's side.
  *
- * No API call, no cache needed. The "resolution" is a constant string.
+ * The standard NixOS community workaround is nixos-infect: boot a
+ * stock Debian instance, then run a script that replaces the root
+ * filesystem with NixOS and kexecs into it. hermes-deploy runs this
+ * as a GCP-specific bootstrap step between "SSH ready" and "upload
+ * config + nixos-rebuild" (see shared.ts).
+ *
+ * We return a Debian 12 family image here. The GCP provisioner creates
+ * the instance with this image, and the orchestrator's GCP-specific
+ * bootstrap path handles the nixos-infect + reboot before proceeding
+ * with the normal flake-based configuration.
  */
-const NIXOS_GCE_PROJECT = 'nixos-cloud';
-const NIXOS_GCE_FAMILY = 'nixos-25-11';
+const DEBIAN_PROJECT = 'debian-cloud';
+const DEBIAN_FAMILY = 'debian-12';
 
 export async function resolveNixosGceImage(
   _cacheFile: string,
 ): Promise<ImageRef> {
-  const familyUrl = `projects/${NIXOS_GCE_PROJECT}/global/images/family/${NIXOS_GCE_FAMILY}`;
+  const familyUrl = `projects/${DEBIAN_PROJECT}/global/images/family/${DEBIAN_FAMILY}`;
   return {
     id: familyUrl,
-    description: `${NIXOS_GCE_PROJECT}/${NIXOS_GCE_FAMILY} (family, resolved at instance creation)`,
+    description: `${DEBIAN_PROJECT}/${DEBIAN_FAMILY} (boots Debian, then nixos-infect converts to NixOS)`,
   };
 }

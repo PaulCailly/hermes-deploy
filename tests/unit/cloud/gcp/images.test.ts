@@ -2,13 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { resolveNixosGceImage } from '../../../../src/cloud/gcp/images.js';
 
 describe('resolveNixosGceImage', () => {
-  it('returns the NixOS family URL without making an API call', async () => {
-    // No cache file needed — the function returns a constant family URL.
-    // GCE resolves the family to the latest image at instance creation time.
+  it('returns a Debian family URL (nixos-infect converts to NixOS post-boot)', async () => {
+    // nixos-cloud images are not publicly usable (403 on
+    // compute.images.useReadOnly). The workaround is to boot Debian
+    // and run nixos-infect. The image resolver returns Debian; the
+    // orchestrator handles the nixos-infect step.
     const ref = await resolveNixosGceImage('/dev/null');
-    expect(ref.id).toBe('projects/nixos-cloud/global/images/family/nixos-25-11');
-    expect(ref.description).toContain('nixos-cloud');
-    expect(ref.description).toContain('nixos-25-11');
+    expect(ref.id).toBe('projects/debian-cloud/global/images/family/debian-12');
+    expect(ref.description).toContain('debian');
+    expect(ref.description).toContain('nixos-infect');
   });
 
   it('returns the same result regardless of cache state', async () => {
