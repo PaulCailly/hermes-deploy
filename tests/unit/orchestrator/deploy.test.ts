@@ -55,16 +55,18 @@ provider = "aws"
 profile = "default"
 region = "eu-west-3"
 size = "small"
+[network]
+ssh_allowed_from = "auto"
+inbound_ports = [443]
 [hermes]
-model = "m"
-soul = "./SOUL.md"
-secrets_file = "./secrets.enc.yaml"
-[hermes.platforms.discord]
-enabled = true
-token_key = "k"
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"
+[hermes.documents]
+"SOUL.md" = "./SOUL.md"
 `);
     writeFileSync(join(projectDir, 'SOUL.md'), '# soul');
-    writeFileSync(join(projectDir, 'secrets.enc.yaml'), 'sops: {}\ndata: {}');
+    writeFileSync(join(projectDir, 'config.yaml'), 'model:\n  default: test\n');
+    writeFileSync(join(projectDir, 'secrets.env.enc'), 'sops: dummy\n');
   });
 
   afterEach(() => rmSync(configDir, { recursive: true, force: true }));

@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve as pathResolve } from 'node:path';
-import { loadHermesToml, HermesTomlError } from '../schema/load.js';
+import { join } from 'node:path';
+import { loadHermesToml } from '../schema/load.js';
 import { StateStore } from '../state/store.js';
 import { getStatePaths } from '../state/paths.js';
 import type { CloudProvider, ProvisionSpec, ResourceLedger } from '../cloud/core.js';
 import type { SshSession } from '../remote-ops/session.js';
 import { createPlainReporter, type Reporter } from './reporter.js';
-import { uploadAndRebuild, recordConfigAndHealthcheck } from './shared.js';
+import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles } from './shared.js';
 
 export interface DeployOptions {
   projectDir: string;
@@ -35,10 +35,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   reporter.phaseStart('validate', 'Validating project configuration');
   const tomlPath = join(opts.projectDir, 'hermes.toml');
   const config = loadHermesToml(tomlPath);
-  const soulPath = pathResolve(opts.projectDir, config.hermes.soul);
-  if (!existsSync(soulPath)) {
-    throw new HermesTomlError(`SOUL file not found: ${soulPath}`);
-  }
+  validateProjectFiles(opts.projectDir, config);
   reporter.phaseDone('validate');
 
   // === Phase 1.5 — ensure SSH and age keys exist ===

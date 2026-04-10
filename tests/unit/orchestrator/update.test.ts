@@ -55,16 +55,15 @@ size = "small"
 ssh_allowed_from = "auto"
 inbound_ports = [443]
 [hermes]
-model = "m"
-soul = "./SOUL.md"
-secrets_file = "./secrets.enc.yaml"
-[hermes.platforms.discord]
-enabled = true
-token_key = "k"
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"
+[hermes.documents]
+"SOUL.md" = "./SOUL.md"
 `,
     );
     writeFileSync(join(projectDir, 'SOUL.md'), '# soul');
-    writeFileSync(join(projectDir, 'secrets.enc.yaml'), 'sops: {}\n');
+    writeFileSync(join(projectDir, 'config.yaml'), 'model:\n  default: test\n');
+    writeFileSync(join(projectDir, 'secrets.env.enc'), 'sops: dummy\n');
 
     // Pre-create the per-deployment keys (no generation on update)
     mkdirSync(join(configDir, 'hermes-deploy/ssh_keys'), { recursive: true });
@@ -131,7 +130,9 @@ token_key = "k"
     const currentHash = computeConfigHash(
       [
         join(projectDir, 'hermes.toml'),
-        join(projectDir, 'secrets.enc.yaml'),
+        join(projectDir, 'config.yaml'),
+        join(projectDir, 'secrets.env.enc'),
+        join(projectDir, 'SOUL.md'),
       ],
       true,
     );

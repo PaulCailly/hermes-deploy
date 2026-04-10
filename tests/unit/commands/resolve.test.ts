@@ -28,12 +28,8 @@ profile = "default"
 region = "eu-west-3"
 size = "small"
 [hermes]
-model = "m"
-soul = "./SOUL.md"
-secrets_file = "./secrets.enc.yaml"
-[hermes.platforms.discord]
-enabled = true
-token_key = "k"
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"
 `,
     );
   });

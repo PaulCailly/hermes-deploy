@@ -2,10 +2,10 @@
 
 A CLI for deploying [hermes-agent](https://hermes-agent.nousresearch.com/) to a cloud VPS in one command.
 
-> **Status: M2 (AWS feature-complete).** Full lifecycle on AWS:
-> `init`, `up`, `update`, `destroy`, `status`, `logs`, `ssh`, `ls`,
-> `secret set/get/rm/list/edit`, `key export/import/path`. Ink TUI on TTY.
-> GCP coming in M3 alongside the `hermes.toml` schema redesign.
+> **Status: M3 (schema redesign).** AWS-only, full lifecycle, with the
+> hermes.toml schema now properly mapping to upstream's services.hermes-agent
+> options. config.yaml lives next to hermes.toml and is uploaded verbatim;
+> secrets are dotenv-encoded sops files. M4 brings GCP.
 
 ## Quick links
 
@@ -70,12 +70,14 @@ Every command that operates on a deployment supports `--name <name>` and `--proj
 
 ```bash
 mkdir -p ~/clients/acme/discord-bot && cd ~/clients/acme/discord-bot
-hermes-deploy init                                # scaffolds hermes.toml + SOUL.md + .gitignore
-$EDITOR hermes.toml                               # set region, size, model, etc.
+hermes-deploy init                                # scaffolds hermes.toml + config.yaml + SOUL.md + secrets.env.enc
+$EDITOR hermes.toml                               # set region, size
+$EDITOR config.yaml                               # or copy from ~/.hermes/config.yaml
 $EDITOR SOUL.md                                   # set agent personality
+hermes-deploy secret set ANTHROPIC_API_KEY sk-... # add real keys
 hermes-deploy up                                  # provision + boot + nixos-rebuild
 hermes-deploy logs                                # stream the agent's journalctl
-$EDITOR hermes.toml                               # iterate
+$EDITOR config.yaml                               # iterate
 hermes-deploy update                              # ~30-90s on a warm box
 hermes-deploy destroy --yes                       # tear it all down
 ```
@@ -105,12 +107,13 @@ Once the cache is populated (run `cachix push <name> /run/current-system` from t
 - `~/.config/hermes-deploy/age_keys/<name>` — per-deployment age private key
 - `~/.cache/hermes-deploy/images.json` — 1-hour AMI lookup cache
 
-## What's deferred to M3+
+## What's deferred to M4+
 
 - **GCP provider implementation**
-- **`hermes.toml` schema redesign** against upstream's actual `services.hermes-agent.{settings, environmentFiles, documents, mcpServers}` options. The current schema's `soul`/`platforms`/`mcp_servers`/`secrets_file` fields are accepted but the generator only emits `services.hermes-agent.settings.model.default` and the optional `nix_extra` import. The migration scaffold from M2 (Phase G) is positioned to handle the v1→v2 schema migration.
 - **Pre-baked AMI pipeline** for sub-2-minute first deploys
 - **Cachix population workflow** (right now you populate the cache by hand)
+- **`hermes-deploy ls --watch` dashboard**
+- **Network-only-update optimization** (skip nixos-rebuild when only network config changed)
 - **GitHub Actions CI / release-please / npm publish**
 
 ## License

@@ -23,10 +23,13 @@ cd ~/clients/acme/discord-bot
 hermes-deploy init
 ```
 
-This writes:
+This writes six files:
 
-- `hermes.toml` — your deployment config (cloud, region, model, etc.)
+- `hermes.toml` — your deployment config (cloud, region, size, file pointers)
+- `config.yaml` — hermes-agent's runtime config (model, integrations, MCP servers, etc.)
 - `SOUL.md` — your agent's personality, read by hermes-agent at startup
+- `.sops.yaml` — tells sops which age key to use for this project
+- `secrets.env.enc` — sops-encrypted dotenv file; starts empty
 - `.gitignore` — excludes hermes-deploy state files from git
 
 The deployment name defaults to a sanitized version of your directory basename (`discord-bot` here). Override with `hermes-deploy init --name my-actual-name` if you want something different.
@@ -37,13 +40,56 @@ Open it in your editor. The defaults are usable as-is for a smoke test, but at m
 
 - `[cloud] region` — pick a region near your users (default: `eu-west-3`)
 - `[cloud] size` — `large` is recommended for the first deploy (the build needs ~6 GB RAM); `medium` or `small` work for subsequent updates if you want to save cost
-- `[hermes] model` — the LLM model identifier you want hermes to use
+- `[hermes] config_file` — path to your config.yaml (default: `"./config.yaml"`)
+- `[hermes] secrets_file` — path to your encrypted secrets (default: `"./secrets.env.enc"`)
 
-## 4. Edit `SOUL.md`
+## 4. Edit `config.yaml`
+
+`config.yaml` is hermes-agent's runtime config. It controls model selection, agent behavior, terminal/browser/messaging integrations, MCP servers, and more. The file is uploaded verbatim to the box and pointed at by `services.hermes-agent.configFile` in the generated NixOS module.
+
+If you already run hermes locally, the obvious starting point is:
+
+```bash
+cp ~/.hermes/config.yaml ./config.yaml
+```
+
+Inside `config.yaml` you can reference secrets via `${VAR}` syntax — for example:
+
+```yaml
+model:
+  api_key: ${ANTHROPIC_API_KEY}
+```
+
+The `${VAR}` references are resolved at agent startup from the agent's environment, which includes everything in your `secrets.env.enc` file. See the "Set secrets" section below for how that chain works.
+
+## 5. Edit `SOUL.md`
 
 Replace the placeholder with your agent's actual personality and operating instructions. This is the file hermes reads at startup to decide who it is.
 
-## 5. Deploy
+## 6. Set secrets
+
+```bash
+hermes-deploy secret set ANTHROPIC_API_KEY sk-...
+hermes-deploy secret set DISCORD_BOT_TOKEN MTI...
+# repeat for every secret your config.yaml references
+```
+
+Each `secret set` call writes a `KEY=value` line into `secrets.env.enc` — a sops-encrypted dotenv file. The values never appear in plaintext on disk after the initial write.
+
+**How secrets reach the agent:**
+
+> Secrets flow from `secrets.env.enc` to the agent like this:
+>
+> 1. `hermes-deploy secret set ANTHROPIC_API_KEY sk-...` writes a `KEY=value` line into the encrypted dotenv file
+> 2. `hermes-deploy up` (or `update`) uploads the file to `/etc/nixos/secrets.env.enc`
+> 3. `nixos-rebuild` activates sops-nix, which decrypts the file to `/run/secrets/hermes-env` (chmod 0440, owner=hermes)
+> 4. hermes-agent's activation script merges that file into `$HERMES_HOME/.env`
+> 5. The agent starts and loads `.env` into `os.environ`
+> 6. The agent loads `config.yaml` and recursively expands `${ANTHROPIC_API_KEY}` references from `os.environ`
+>
+> Net effect: you write `api_key: ${ANTHROPIC_API_KEY}` in your config.yaml, run `secret set ANTHROPIC_API_KEY sk-...`, and the next deploy gives the agent the real key without ever putting it in plaintext on disk.
+
+## 7. Deploy
 
 ```bash
 hermes-deploy up
@@ -62,7 +108,7 @@ You'll see a live timeline of phases:
 
 The bootstrap phase takes 10-15 minutes the first time (compiling hermes-agent's Python closure from source). Subsequent deploys to fresh instances of the same hermes-agent revision will hit the same delay unless you set up a [Cachix cache](#optional-cachix). Updates against an existing instance are much faster (30-90 seconds) because the rebuild is incremental.
 
-## 6. Watch it run
+## 8. Watch it run
 
 ```bash
 hermes-deploy logs                    # streams journalctl until Ctrl-C
@@ -70,9 +116,9 @@ hermes-deploy status                  # snapshot of stored + live state
 hermes-deploy ssh                     # drop into a shell on the box
 ```
 
-## 7. Iterate
+## 9. Iterate
 
-Edit `hermes.toml` or `SOUL.md`, then:
+Edit `config.yaml` or `hermes.toml`, then:
 
 ```bash
 hermes-deploy update
@@ -80,13 +126,15 @@ hermes-deploy update
 
 The update flow re-evaluates your config, computes a content hash, and either short-circuits (if nothing changed) or pushes the new config to the existing instance via `nixos-rebuild switch`. No reprovisioning, no SSH key rotation — your instance keeps its IP and state.
 
-## 8. Tear down
+Changes to `config.yaml` propagate fully: the file is uploaded and sops-nix re-decrypts `secrets.env.enc`, so if you also ran `secret set` to update a key, the agent's next startup sees the new value. No instance replacement needed.
+
+## 10. Tear down
 
 ```bash
 hermes-deploy destroy --yes
 ```
 
-This removes the instance, security group, key pair, elastic IP, the per-deployment SSH and age keys under `~/.config/hermes-deploy/`, and the project's `.sops.yaml` + `secrets.enc.yaml`. The next `hermes-deploy up` from the same project directory starts from a clean slate.
+This removes the instance, security group, key pair, elastic IP, the per-deployment SSH and age keys under `~/.config/hermes-deploy/`, and the project's `.sops.yaml` + `secrets.env.enc`. The next `hermes-deploy up` from the same project directory starts from a clean slate.
 
 ## Optional: Cachix
 
@@ -114,7 +162,7 @@ The first deploy compiles hermes-agent's Python closure from source (~10-15 min 
 
 6. Subsequent first-deploys substitute the closure from cache instead of building it.
 
-A proper push automation lands in M3.
+A proper push automation lands in M4.
 
 ## Multiple deployments
 
@@ -124,6 +172,7 @@ Each project directory is one deployment. To manage multiple:
 mkdir -p ~/clients/beta/telegram-bot && cd ~/clients/beta/telegram-bot
 hermes-deploy init --name beta-telegram
 $EDITOR hermes.toml
+$EDITOR config.yaml
 hermes-deploy up
 
 # from anywhere:
@@ -137,9 +186,3 @@ The `--name` flag works on every command and looks up the project path from the 
 ## Going to a different machine
 
 See [multi-machine-key-sync.md](multi-machine-key-sync.md).
-
-## What's not yet wired up
-
-The current generator emits a minimal `hermes.nix` with only `services.hermes-agent.enable` and `settings.model.default`. The schema's `soul`, `platforms.discord`, `secrets_file`, and `mcp_servers` fields are accepted but ignored. M3 will redesign the schema and wire these properly through `services.hermes-agent.{settings, environmentFiles, documents, mcpServers}`.
-
-In practice that means M2 deployments start hermes-agent with no API keys, no Discord/Telegram tokens, and no MCP servers. The agent runs but logs "no platforms configured" until you SSH in and set things up manually — or until M3 lands.

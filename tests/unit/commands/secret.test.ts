@@ -85,15 +85,11 @@ profile = "default"
 region = "eu-west-3"
 size = "small"
 [hermes]
-model = "m"
-soul = "./SOUL.md"
-secrets_file = "./secrets.enc.yaml"
-[hermes.platforms.discord]
-enabled = true
-token_key = "discord_bot_token"
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"
 `,
     );
-    writeFileSync(join(projectDir, 'SOUL.md'), '# soul');
+    writeFileSync(join(projectDir, 'config.yaml'), 'model: m\n');
     process.chdir(projectDir);
   });
 

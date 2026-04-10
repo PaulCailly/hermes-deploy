@@ -3,13 +3,13 @@ import { StateTomlSchema, type StateToml } from '../../../src/schema/state-toml.
 
 describe('StateTomlSchema', () => {
   it('accepts an empty state', () => {
-    const result = StateTomlSchema.safeParse({ schema_version: 1, deployments: {} });
+    const result = StateTomlSchema.safeParse({ schema_version: 2, deployments: {} });
     expect(result.success).toBe(true);
   });
 
   it('accepts a state with one AWS deployment', () => {
     const state: StateToml = {
-      schema_version: 1,
+      schema_version: 2,
       deployments: {
         'acme-discord-bot': {
           project_path: '/Users/paul/clients/acme/discord-bot',
@@ -43,7 +43,7 @@ describe('StateTomlSchema', () => {
 
   it('rejects deployment without required cloud_resources fields', () => {
     const result = StateTomlSchema.safeParse({
-      schema_version: 1,
+      schema_version: 2,
       deployments: {
         bad: {
           project_path: '/x',
@@ -65,7 +65,7 @@ describe('StateTomlSchema', () => {
 
   it('rejects a deployment whose cloud field does not match cloud_resources shape', () => {
     const result = StateTomlSchema.safeParse({
-      schema_version: 1,
+      schema_version: 2,
       deployments: {
         mismatch: {
           project_path: '/x',

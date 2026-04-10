@@ -1,9 +1,0 @@
-name = "test-invalid"
-
-[cloud]
-provider = "azure"
-region = "eu-west-3"
-size = "huge"
-
-[hermes]
-model = "anthropic/claude-sonnet-4-5"

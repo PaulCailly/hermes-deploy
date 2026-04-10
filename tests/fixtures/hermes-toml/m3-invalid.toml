@@ -1,0 +1,10 @@
+name = "test-m3-invalid"
+
+[cloud]
+provider = "azure"
+profile = "default"
+region = "eu-west-3"
+size = "huge"
+
+[hermes]
+# missing required config_file and secrets_file

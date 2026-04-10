@@ -33,7 +33,7 @@ export const FLAKE_NIX = `{
         ./hermes.nix
         sops-nix.nixosModules.sops
         hermes-agent.nixosModules.default
-      ];
+      ] ++ nixpkgs.lib.optional (builtins.pathExists ./hermes.extra.nix) ./hermes.extra.nix;
     };
   };
 }
@@ -93,19 +93,18 @@ ${substitutersBlock}
   networking.firewall.enable = true;
 
   sops = {
-    defaultSopsFile = ./secrets.enc.yaml;
+    defaultSopsFile = ./secrets.env.enc;
     age.keyFile = "/var/lib/sops-nix/age.key";
-    # Placeholder secret: hermes-agent's nixosModule hardcodes an activation
-    # dep on "setupSecrets", which sops-nix only registers when at least one
-    # sops.secrets.* entry exists. Without this declaration nixos-rebuild
-    # fails with 'attribute setupSecrets missing' during activation-script
-    # dep resolution. The sops bootstrap already writes \`placeholder: bootstrap\`
-    # into secrets.enc.yaml, so this decrypts cleanly at activation. Nothing
-    # reads /run/secrets/placeholder — it's pure plumbing to satisfy upstream.
-    # M2 will redesign the secrets pipeline with real secret declarations
-    # driven by the hermes.toml schema, and this placeholder can go away.
-    # See: github.com/NousResearch/hermes-agent/nix/nixosModules.nix:572
-    secrets."placeholder" = { };
+    # M3 declares a real secret (the dotenv-encoded environment file)
+    # instead of M1.1's placeholder workaround. The real secret satisfies
+    # hermes-agent's hardcoded \`setupSecrets\` activation dep AND wires
+    # the decrypted file into services.hermes-agent.environmentFiles via
+    # config.sops.secrets."hermes-env".path (referenced from hermes.nix).
+    secrets."hermes-env" = {
+      format = "dotenv";
+      owner = config.services.hermes-agent.user;
+      group = config.services.hermes-agent.group;
+    };
   };
 }
 `;
