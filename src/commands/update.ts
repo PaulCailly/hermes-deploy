@@ -32,6 +32,8 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
   const provider = createCloudProvider({
     provider: deployment.cloud,
     region: deployment.region,
+    profile: deployment.cloud === 'gcp' ? (deployment.cloud_resources as any).project_id : undefined,
+    zone: deployment.cloud === 'gcp' ? (deployment.cloud_resources as any).zone : undefined,
     imageCacheFile: paths.imageCacheFile,
   });
 
