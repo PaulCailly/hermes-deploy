@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveDeployment } from './resolve.js';
 import { StateStore } from '../state/store.js';
@@ -11,6 +11,20 @@ interface SecretContext {
   ageKeyPath: string;
 }
 
+/**
+ * Resolve the deployment context for a secret command. Needs the
+ * project directory (for the sops file) and the per-deployment age
+ * key path (for decryption).
+ *
+ * Two resolution paths:
+ *   1. Deployment exists in state (post-`up`): read age_key_path
+ *      from state.toml — the authoritative source.
+ *   2. Deployment NOT in state (post-`init`, pre-`up`): derive the
+ *      age key path from the deployment name via getStatePaths().
+ *      Init eagerly generates the key; the sops file exists. This
+ *      lets users `secret set` immediately after `init`, BEFORE
+ *      their first `up`.
+ */
 async function getContext(name?: string, projectPath?: string): Promise<SecretContext> {
   const { name: resolvedName, projectPath: resolvedProject } = await resolveDeployment({
     name,
@@ -18,19 +32,31 @@ async function getContext(name?: string, projectPath?: string): Promise<SecretCo
     cwd: process.cwd(),
   });
 
-  const store = new StateStore(getStatePaths());
+  const paths = getStatePaths();
+  const store = new StateStore(paths);
   const state = await store.read();
   const deployment = state.deployments[resolvedName];
-  if (!deployment) {
-    throw new Error(
-      `deployment "${resolvedName}" not found in state — run \`hermes-deploy up\` first`,
-    );
+
+  let ageKeyPath: string;
+  if (deployment) {
+    // Post-`up`: age key path is recorded in state.
+    ageKeyPath = deployment.age_key_path;
+  } else {
+    // Post-`init`, pre-`up`: derive the path from the deployment name.
+    // Init eagerly generates the key at this location.
+    ageKeyPath = paths.ageKeyForDeployment(resolvedName);
+    if (!existsSync(ageKeyPath)) {
+      throw new Error(
+        `no age key for deployment "${resolvedName}" — run \`hermes-deploy init\` first`,
+      );
+    }
   }
+
   const secretsPath = join(resolvedProject, 'secrets.env.enc');
   return {
     projectDir: resolvedProject,
     secretsPath,
-    ageKeyPath: deployment.age_key_path,
+    ageKeyPath,
   };
 }
 

@@ -57,6 +57,13 @@ export function generateHermesNix(config: HermesTomlConfig): string {
   }
 
   lines.push('  };');
+  lines.push('');
+  lines.push('  # Restart hermes-agent whenever sops-nix re-decrypts the secrets file.');
+  lines.push('  # Without this, `secret set` + `update` re-decrypts the file on disk');
+  lines.push('  # but the running process still has the old .env loaded from startup.');
+  lines.push('  systemd.services.hermes-agent.restartTriggers = [');
+  lines.push('    config.sops.secrets."hermes-env".path');
+  lines.push('  ];');
   lines.push('}');
   lines.push('');
   return lines.join('\n');
