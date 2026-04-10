@@ -126,7 +126,7 @@ ${provider === 'gcp' ? `
   # causing "Connection closed by ... port 22" on every login attempt.
   # hermes-deploy manages SSH keys via NixOS config (above), not
   # via Google's IAM-based OS Login.
-  security.googleOsLogin.enable = false;` : ''}
+  security.googleOsLogin.enable = lib.mkForce false;` : ''}
 
   networking.firewall.enable = true;
 
