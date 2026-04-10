@@ -45,20 +45,27 @@ export interface CachixConfig {
 }
 
 /**
- * configuration.nix is the host-level NixOS config (imports amazon-image
- * so the instance boots correctly as an EC2 VM, enables flakes so
- * nixos-rebuild can re-evaluate the flake later, opens sshd, turns on
- * the firewall). It explicitly does NOT import hermes-agent — the flake
- * does that via the modules list above. It also explicitly does NOT
- * declare any hermes-agent options — those live in ./hermes.nix which
- * is the generator's output.
+ * configuration.nix is the host-level NixOS config. It imports the
+ * cloud-specific virtualisation module so the instance boots correctly:
+ *   - AWS (EC2):  virtualisation/amazon-image.nix
+ *   - GCP (GCE):  virtualisation/google-compute-image.nix
+ *
+ * It enables flakes, opens sshd, turns on the firewall, and wires
+ * sops-nix for secret decryption. It explicitly does NOT import
+ * hermes-agent — the flake does that via the modules list above.
  *
  * If a Cachix cache is configured (via [hermes.cachix] in hermes.toml),
  * the substituter and trusted-public-key are appended to nix.settings so
  * subsequent rebuilds substitute the hermes-agent closure from binary
  * cache instead of compiling from source.
  */
-export function configurationNix(cachix?: CachixConfig): string {
+const VIRT_MODULE: Record<string, string> = {
+  aws: 'amazon-image.nix',
+  gcp: 'google-compute-image.nix',
+};
+
+export function configurationNix(provider: 'aws' | 'gcp', sshPublicKey?: string, cachix?: CachixConfig): string {
+  const virtModule = VIRT_MODULE[provider];
   const substitutersBlock = cachix
     ? `
   nix.settings = {
@@ -77,7 +84,7 @@ export function configurationNix(cachix?: CachixConfig): string {
   return `{ config, pkgs, lib, modulesPath, ... }:
 {
   imports = [
-    "\${modulesPath}/virtualisation/amazon-image.nix"
+    "\${modulesPath}/virtualisation/${virtModule}"
   ];
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
@@ -89,6 +96,37 @@ ${substitutersBlock}
     settings.PasswordAuthentication = false;
     settings.PermitRootLogin = "prohibit-password";
   };
+
+  # Don't restart sshd during nixos-rebuild activation. The rebuild runs
+  # over SSH — if sshd restarts mid-stream, the SSH channel drops and
+  # hermes-deploy loses contact with the box. On GCE this is fatal (the
+  # stream breaks silently and the process exits 0 without finishing).
+  # On AWS it's a race condition that usually works by luck.
+  #
+  # With restartIfChanged = false, sshd picks up config changes (like
+  # PermitRootLogin and authorized_keys) on the NEXT activation, or when
+  # the user manually restarts it. authorized_keys.keys are file-based
+  # and take effect immediately without an sshd restart — so SSH access
+  # is never actually broken; only sshd_config changes are delayed.
+  systemd.services.sshd.restartIfChanged = false;
+${sshPublicKey ? `
+  # Bake the deployment SSH key into the NixOS config so it survives
+  # nixos-rebuild activation. On GCE with nixos-infect, the rebuild
+  # removes /etc/ssh/authorized_keys.d/root (set by the guest agent
+  # on the Debian base). Without this line, root SSH access is lost
+  # after the first rebuild. On AWS this is redundant (amazon-image.nix
+  # handles it via cloud-init) but harmless.
+  users.users.root.openssh.authorizedKeys.keys = [
+    "${sshPublicKey}"
+  ];` : ''}
+${provider === 'gcp' ? `
+  # Disable Google OS Login — it conflicts with standard SSH key auth.
+  # google-compute-image.nix enables it by default, which adds a PAM
+  # module that rejects the session AFTER the SSH key is accepted,
+  # causing "Connection closed by ... port 22" on every login attempt.
+  # hermes-deploy manages SSH keys via NixOS config (above), not
+  # via Google's IAM-based OS Login.
+  security.googleOsLogin.enable = lib.mkForce false;` : ''}
 
   networking.firewall.enable = true;
 

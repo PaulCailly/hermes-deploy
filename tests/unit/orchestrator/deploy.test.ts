@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+
+// Mock the rebuild to avoid the nohup+poll loop in orchestrator tests.
+// The rebuild itself is tested in remote-ops/nixos-rebuild.test.ts.
+vi.mock('../../../src/remote-ops/nixos-rebuild.js', () => ({
+  runNixosRebuild: vi.fn(async () => ({ success: true, tail: [] })),
+}));
+
 import { runDeploy } from '../../../src/orchestrator/deploy.js';
 import type { CloudProvider } from '../../../src/cloud/core.js';
 import type { SshSession } from '../../../src/remote-ops/session.js';

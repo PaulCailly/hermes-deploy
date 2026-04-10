@@ -1,6 +1,6 @@
 {
   "name": "@hermes-deploy/cli",
-  "version": "0.1.0-m1",
+  "version": "0.4.0-m4",
   "description": "Deploy Nous Research's hermes-agent to AWS and GCP",
   "type": "module",
   "bin": {
@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.600.0",
+    "@google-cloud/compute": "^6.9.0",
     "commander": "^12.1.0",
     "ink": "^7.0.0",
     "ink-spinner": "^5.0.0",

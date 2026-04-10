@@ -52,9 +52,11 @@ export function validateProjectFiles(projectDir: string, config: HermesTomlConfi
 
 export interface BootstrapArgs {
   session: SshSession;
+  sessionFactory: () => Promise<SshSession>;
   projectDir: string;
   config: HermesTomlConfig;
   ageKeyPath: string;
+  sshPublicKey?: string;
   reporter: Reporter;
 }
 
@@ -71,7 +73,7 @@ export interface BootstrapArgs {
 export async function uploadAndRebuild(args: BootstrapArgs): Promise<void> {
   const { session, projectDir, config, ageKeyPath, reporter } = args;
   const flakeNix = generateFlakeNix();
-  const configurationNix = generateConfigurationNix(config);
+  const configurationNix = generateConfigurationNix(config, args.sshPublicKey);
   const hermesNix = generateHermesNix(config);
   const ageKeyContent = readFileSync(ageKeyPath, 'utf-8');
 
@@ -106,7 +108,9 @@ export async function uploadAndRebuild(args: BootstrapArgs): Promise<void> {
   await session.exec('mkdir -p /var/lib/sops-nix');
   await session.uploadFile('/var/lib/sops-nix/age.key', ageKeyContent, 0o600);
 
-  const rebuild = await runNixosRebuild(session, (_s, line) => reporter.log(line));
+  // Run the rebuild via nohup + poll so it survives sshd restarts.
+  // The session used for uploads may die during the rebuild — that's OK.
+  const rebuild = await runNixosRebuild(args.sessionFactory, (_s, line) => reporter.log(line));
   if (!rebuild.success) {
     throw new Error(`nixos-rebuild failed:\n${rebuild.tail.join('\n')}`);
   }
@@ -143,6 +147,9 @@ export async function recordConfigAndHealthcheck(
   const documentPaths = Object.values(config.hermes.documents).map(p =>
     pathResolve(projectDir, p),
   );
+
+  // Full hash (includes hermes.toml) — used for the top-level no-op check
+  // so that ANY change to hermes.toml causes at least network reconciliation.
   const configHash = computeConfigHash(
     [
       tomlPath,
@@ -154,9 +161,23 @@ export async function recordConfigAndHealthcheck(
     true,
   );
 
+  // Nix-only hash (excludes hermes.toml) — used by the network-only
+  // optimization in runUpdate to skip nixos-rebuild when only network
+  // rules changed.
+  const nixHash = computeConfigHash(
+    [
+      pathResolve(projectDir, config.hermes.config_file),
+      pathResolve(projectDir, config.hermes.secrets_file),
+      config.hermes.nix_extra ? pathResolve(projectDir, config.hermes.nix_extra) : '',
+      ...documentPaths,
+    ].filter(Boolean),
+    true,
+  );
+
   await store.update(state => {
     const d = state.deployments[deploymentName]!;
     d.last_config_hash = configHash;
+    d.last_nix_hash = nixHash;
     d.last_deployed_at = new Date().toISOString();
   });
 

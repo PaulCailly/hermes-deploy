@@ -1,9 +1,10 @@
 export const HERMES_TOML_TEMPLATE = (name: string) => `name = "${name}"
 
 [cloud]
-provider = "aws"        # "aws" (M2/M3) or "gcp" (coming in M4)
+provider = "aws"        # "aws" or "gcp"
 profile  = "default"     # AWS profile name or GCP project id
 region   = "eu-west-3"
+# zone   = "europe-west1-b"  # required when provider = "gcp"
 size     = "large"       # "small" | "medium" | "large"
                          # IMPORTANT: the first hermes-agent build needs
                          # ~6 GB RAM. "small" (t3.small, 2 GB) will OOM-
@@ -12,6 +13,10 @@ size     = "large"       # "small" | "medium" | "large"
                          # once Cachix is populated.
 disk_gb  = 30            # root volume size; first hermes-agent build
                          # needs at least 20 GB free
+# image  = "..."         # optional: override the NixOS image.
+                         # AWS: ami-xxx  GCP: projects/<proj>/global/images/<name>
+                         # If unset, hermes-deploy resolves the latest NixOS 25.11 image.
+                         # Set this if the public NixOS images have permission issues.
 
 [network]
 ssh_allowed_from = "auto"   # "auto" = your current public IP, or a CIDR

@@ -14,6 +14,12 @@ const CloudSchema = z
     // which is too small to build the hermes-agent Python closure
     // from source. 30 GB is a safe floor; raise for heavier deployments.
     disk_gb: z.number().int().min(8).max(500).default(30),
+    // Optional image override. When set, the image resolver is skipped
+    // and this value is used directly (AMI ID for AWS, image self-link
+    // or family URL for GCP). Useful when the public NixOS images have
+    // permission issues (e.g., nixos-cloud on GCP) and you need to use
+    // an imported image in your own project.
+    image: z.string().min(1).optional(),
   })
   .refine(c => c.provider !== 'gcp' || !!c.zone, {
     message: 'cloud.zone is required when cloud.provider = "gcp"',

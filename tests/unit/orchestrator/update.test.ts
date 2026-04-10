@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// Mock the rebuild to avoid the nohup+poll loop in orchestrator tests.
+vi.mock('../../../src/remote-ops/nixos-rebuild.js', () => ({
+  runNixosRebuild: vi.fn(async () => ({ success: true, tail: [] })),
+}));
+
 import { runUpdate } from '../../../src/orchestrator/update.js';
 import type { CloudProvider } from '../../../src/cloud/core.js';
 import type { SshSession } from '../../../src/remote-ops/session.js';
@@ -91,6 +97,7 @@ secrets_file = "./secrets.env.enc"
         created_at: '2026-04-01T00:00:00Z',
         last_deployed_at: '2026-04-01T00:00:00Z',
         last_config_hash: 'sha256:old',
+        last_nix_hash: 'sha256:old-nix',
         ssh_key_path: join(configDir, 'hermes-deploy/ssh_keys/test'),
         age_key_path: join(configDir, 'hermes-deploy/age_keys/test'),
         health: 'healthy',
@@ -154,6 +161,46 @@ secrets_file = "./secrets.env.enc"
     expect(result.skipped).toBe(true);
     expect(sessionFactory).not.toHaveBeenCalled();
     expect(provider.reconcileNetwork).not.toHaveBeenCalled();
+  });
+
+  it('skips nixos-rebuild (but runs reconcileNetwork) when only network rules changed', async () => {
+    // Pre-populate last_nix_hash with what a rebuild would store — the
+    // hash of the nix-relevant files only (no hermes.toml). Then change
+    // hermes.toml by updating inbound_ports — the full config hash
+    // changes, so the no-op check at the top does NOT fire and
+    // reconcileNetwork runs. But the nix files are untouched so the
+    // network-only short-circuit should fire and skip SSH + rebuild.
+    const nixHash = computeConfigHash(
+      [
+        join(projectDir, 'config.yaml'),
+        join(projectDir, 'secrets.env.enc'),
+        join(projectDir, 'SOUL.md'),
+      ],
+      true,
+    );
+    const store = new StateStore(getStatePaths());
+    await store.update(state => {
+      state.deployments['test']!.last_nix_hash = nixHash;
+      // Keep last_config_hash stale so the full no-op check does NOT fire.
+    });
+
+    const provider = fakeProvider();
+    const sessionFactory = vi.fn(async () => healthySession());
+
+    const result = await runUpdate({
+      deploymentName: 'test',
+      provider,
+      sessionFactory,
+      detectPublicIp: async () => '203.0.113.1/32',
+      healthcheckTimeoutMs: 500,
+    });
+
+    // Network reconciliation must have run.
+    expect(provider.reconcileNetwork).toHaveBeenCalledTimes(1);
+    // No SSH session should have been opened.
+    expect(sessionFactory).not.toHaveBeenCalled();
+    expect(result.skipped).toBe(false);
+    expect(result.health).toBe('healthy');
   });
 
   it('throws when the deployment is not in state', async () => {

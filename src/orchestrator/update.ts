@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve as pathResolve } from 'node:path';
 import { loadHermesToml } from '../schema/load.js';
 import { StateStore } from '../state/store.js';
@@ -102,16 +102,49 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   await opts.provider.reconcileNetwork(ledger, rules);
   reporter.phaseDone('provision');
 
+  // === Network-only optimization ===
+  // If the nix-relevant files (config_file, secrets_file, nix_extra,
+  // documents) haven't changed since the last successful rebuild, the
+  // network reconciliation above was all that was needed. Skip the
+  // expensive SSH + nixos-rebuild step.
+  const nixHash = computeConfigHash(
+    [
+      pathResolve(deployment.project_path, config.hermes.config_file),
+      pathResolve(deployment.project_path, config.hermes.secrets_file),
+      config.hermes.nix_extra
+        ? pathResolve(deployment.project_path, config.hermes.nix_extra)
+        : '',
+      ...documentPaths,
+    ].filter(Boolean),
+    true,
+  );
+  if (nixHash === deployment.last_nix_hash) {
+    reporter.success(`network rules updated — ${opts.deploymentName} config unchanged`);
+    return {
+      health: deployment.health === 'healthy' ? 'healthy' : 'unhealthy',
+      publicIp: deployment.instance_ip,
+      skipped: false,
+    };
+  }
+
   // === Phase 4 — bootstrap (SSH + upload + rebuild) ===
   reporter.phaseStart('bootstrap', 'Uploading config and running nixos-rebuild');
   const privateKeyContent = readFileSync(deployment.ssh_key_path, 'utf-8');
   const session = await opts.sessionFactory(deployment.instance_ip, privateKeyContent);
   try {
+    // Read the SSH public key so the generated configuration.nix bakes
+    // it into users.users.root.openssh.authorizedKeys.keys. Without this,
+    // nixos-rebuild removes the guest-agent-managed authorized key and
+    // root SSH access is lost on GCE (and harmlessly redundant on AWS).
+    const sshPubKeyPath = `${deployment.ssh_key_path}.pub`;
+    const sshPublicKey = existsSync(sshPubKeyPath) ? readFileSync(sshPubKeyPath, 'utf-8').trim() : undefined;
     await uploadAndRebuild({
       session,
+      sessionFactory: () => opts.sessionFactory(deployment.instance_ip, readFileSync(deployment.ssh_key_path, 'utf-8')),
       projectDir: deployment.project_path,
       config,
       ageKeyPath: deployment.age_key_path,
+      sshPublicKey,
       reporter,
     });
     reporter.phaseDone('bootstrap');

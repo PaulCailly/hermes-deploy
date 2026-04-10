@@ -18,7 +18,7 @@ export class StateStore {
 
   async read(): Promise<StateToml> {
     if (!existsSync(this.paths.stateFile)) {
-      return { schema_version: 2, deployments: {} };
+      return { schema_version: 3, deployments: {} };
     }
     const raw = readFileSync(this.paths.stateFile, 'utf-8');
     const parsed = parseToml(raw);
@@ -40,7 +40,7 @@ export class StateStore {
     this.ensureConfigDir();
     // Ensure the lockfile target exists for proper-lockfile
     if (!existsSync(this.paths.stateFile)) {
-      writeFileSync(this.paths.stateFile, 'schema_version = 2\n[deployments]\n');
+      writeFileSync(this.paths.stateFile, 'schema_version = 3\n[deployments]\n');
     }
     const release = await lockfile.lock(this.paths.stateFile, {
       retries: { retries: 30, minTimeout: 100, maxTimeout: 500 },

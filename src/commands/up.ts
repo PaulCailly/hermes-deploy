@@ -27,14 +27,12 @@ export async function upCommand(opts: UpOptions): Promise<void> {
   });
 
   const config = loadHermesToml(join(projectPath, 'hermes.toml'));
-  if (config.cloud.provider !== 'aws') {
-    throw new Error(`hermes-deploy currently supports cloud.provider = "aws" only (got "${config.cloud.provider}"). GCP lands in M4.`);
-  }
 
   const paths = getStatePaths();
   const provider = createCloudProvider({
     provider: config.cloud.provider,
     region: config.cloud.region,
+    zone: config.cloud.zone,
     profile: config.cloud.profile,
     imageCacheFile: paths.imageCacheFile,
   });

@@ -12,10 +12,10 @@ const AwsResourcesSchema = z.object({
 
 const GcpResourcesSchema = z.object({
   instance_name: z.string().min(1),
-  firewall_rule_name: z.string().min(1),
+  static_ip_name: z.string().min(1),
+  firewall_rule_names: z.array(z.string().min(1)),
   project_id: z.string().min(1),
   zone: z.string().min(1),
-  external_ip: z.string().min(1),
 });
 
 const BaseDeploymentSchema = z.object({
@@ -24,6 +24,15 @@ const BaseDeploymentSchema = z.object({
   created_at: z.string().datetime(),
   last_deployed_at: z.string().datetime(),
   last_config_hash: z.string().min(1),
+  /**
+   * Hash of the nix-relevant files only (config_file, secrets_file,
+   * nix_extra, documents) — excludes hermes.toml so that changes to
+   * network-only fields do NOT trigger a nixos-rebuild. Populated after
+   * every successful nixos-rebuild; defaults to "sha256:unknown" on
+   * migration (forces a rebuild on the first update after upgrade, which
+   * is safe).
+   */
+  last_nix_hash: z.string().min(1).default('sha256:unknown'),
   ssh_key_path: z.string().min(1),
   age_key_path: z.string().min(1),
   health: HealthSchema,
@@ -42,7 +51,7 @@ const DeploymentSchema = z.discriminatedUnion('cloud', [
 ]);
 
 export const StateTomlSchema = z.object({
-  schema_version: z.literal(2),
+  schema_version: z.literal(3),
   deployments: z.record(z.string(), DeploymentSchema),
 });
 

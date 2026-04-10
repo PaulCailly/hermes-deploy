@@ -60,6 +60,7 @@ describe.skipIf(!sopsAvailable)('secret subcommands', () => {
         created_at: '2026-04-01T00:00:00Z',
         last_deployed_at: '2026-04-01T00:00:00Z',
         last_config_hash: 'sha256:x',
+          last_nix_hash: 'sha256:x',
         ssh_key_path: '/x',
         age_key_path: ageKeyPath,
         health: 'healthy',
