@@ -96,6 +96,19 @@ ${substitutersBlock}
     settings.PasswordAuthentication = false;
     settings.PermitRootLogin = "prohibit-password";
   };
+
+  # Don't restart sshd during nixos-rebuild activation. The rebuild runs
+  # over SSH — if sshd restarts mid-stream, the SSH channel drops and
+  # hermes-deploy loses contact with the box. On GCE this is fatal (the
+  # stream breaks silently and the process exits 0 without finishing).
+  # On AWS it's a race condition that usually works by luck.
+  #
+  # With restartIfChanged = false, sshd picks up config changes (like
+  # PermitRootLogin and authorized_keys) on the NEXT activation, or when
+  # the user manually restarts it. authorized_keys.keys are file-based
+  # and take effect immediately without an sshd restart — so SSH access
+  # is never actually broken; only sshd_config changes are delayed.
+  systemd.services.sshd.restartIfChanged = false;
 ${sshPublicKey ? `
   # Bake the deployment SSH key into the NixOS config so it survives
   # nixos-rebuild activation. On GCE with nixos-infect, the rebuild
