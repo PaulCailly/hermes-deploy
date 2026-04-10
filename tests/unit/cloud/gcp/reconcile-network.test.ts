@@ -6,6 +6,8 @@ const mockFirewallsPatch = vi.fn();
 const mockFirewallsInsert = vi.fn();
 const mockFirewallsDelete = vi.fn();
 
+const mockOpsWait = vi.fn().mockResolvedValue([{ done: true }]);
+
 vi.mock('@google-cloud/compute', () => ({
   FirewallsClient: vi.fn().mockImplementation(() => ({
     get: mockFirewallsGet,
@@ -13,6 +15,7 @@ vi.mock('@google-cloud/compute', () => ({
     insert: mockFirewallsInsert,
     delete: mockFirewallsDelete,
   })),
+  GlobalOperationsClient: vi.fn().mockImplementation(() => ({ wait: mockOpsWait })),
 }));
 
 import { reconcileNetworkGcp } from '../../../../src/cloud/gcp/reconcile-network.js';
@@ -41,7 +44,7 @@ describe('reconcileNetworkGcp', () => {
       allowed: [{ IPProtocol: 'tcp', ports: ['22'] }],
       sourceRanges: ['1.1.1.1/32'],
     }]);
-    mockFirewallsPatch.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
+    mockFirewallsPatch.mockResolvedValueOnce([{ name: 'op-mock' }]);
 
     await reconcileNetworkGcp(makeLedger(['hermes-deploy-test-ssh']), {
       sshAllowedFrom: '2.2.2.2/32',
@@ -72,7 +75,7 @@ describe('reconcileNetworkGcp', () => {
     mockFirewallsGet.mockResolvedValueOnce([{
       sourceRanges: ['1.2.3.4/32'],
     }]);
-    mockFirewallsInsert.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
+    mockFirewallsInsert.mockResolvedValueOnce([{ name: 'op-mock' }]);
 
     const ledger = makeLedger(['hermes-deploy-test-ssh']);
     await reconcileNetworkGcp(ledger, {

@@ -1,5 +1,6 @@
 import { InstancesClient, AddressesClient, FirewallsClient } from '@google-cloud/compute';
 import type { ResourceLedger } from '../core.js';
+import { waitZoneOp, waitRegionOp, waitGlobalOp } from './wait-op.js';
 
 export async function destroyGcp(ledger: ResourceLedger): Promise<void> {
   if (ledger.kind !== 'gcp') throw new Error(`expected gcp ledger, got ${ledger.kind}`);
@@ -12,7 +13,7 @@ export async function destroyGcp(ledger: ResourceLedger): Promise<void> {
     try {
       const client = new InstancesClient();
       const [op] = await client.delete({ project, zone, instance: r.instance_name });
-      await op.promise();
+      await waitZoneOp(project, zone, op);
     } catch (e) {
       if (!isNotFound(e)) throw e;
     }
@@ -24,7 +25,7 @@ export async function destroyGcp(ledger: ResourceLedger): Promise<void> {
     try {
       const client = new AddressesClient();
       const [op] = await client.delete({ project, region, address: r.static_ip_name });
-      await op.promise();
+      await waitRegionOp(project, region, op);
     } catch (e) {
       if (!isNotFound(e)) throw e;
     }
@@ -36,7 +37,7 @@ export async function destroyGcp(ledger: ResourceLedger): Promise<void> {
     for (const name of r.firewall_rule_names) {
       try {
         const [op] = await client.delete({ project, firewall: name });
-        await op.promise();
+        await waitGlobalOp(project, op);
       } catch (e) {
         if (!isNotFound(e)) throw e;
       }

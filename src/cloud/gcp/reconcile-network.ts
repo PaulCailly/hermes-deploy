@@ -1,5 +1,6 @@
 import { FirewallsClient } from '@google-cloud/compute';
 import type { ResourceLedger, NetworkRules } from '../core.js';
+import { waitGlobalOp } from './wait-op.js';
 
 export async function reconcileNetworkGcp(
   ledger: ResourceLedger,
@@ -28,7 +29,7 @@ export async function reconcileNetworkGcp(
         firewall: sshRuleName,
         firewallResource: { sourceRanges: [rules.sshAllowedFrom] },
       });
-      await op.promise();
+      await waitGlobalOp(project, op);
     }
   }
 
@@ -49,7 +50,7 @@ export async function reconcileNetworkGcp(
         targetTags: [baseName],
       },
     });
-    await op.promise();
+    await waitGlobalOp(project, op);
     r.firewall_rule_names = [...ruleNames, portsRuleName];
   } else if (wantsPorts && hasPortsRule) {
     // Patch existing ports rule if ports changed
@@ -64,12 +65,12 @@ export async function reconcileNetworkGcp(
           allowed: [{ IPProtocol: 'tcp', ports: desiredPorts }],
         },
       });
-      await op.promise();
+      await waitGlobalOp(project, op);
     }
   } else if (!wantsPorts && hasPortsRule) {
     // Delete the ports rule
     const [op] = await client.delete({ project, firewall: portsRuleName });
-    await op.promise();
+    await waitGlobalOp(project, op);
     r.firewall_rule_names = ruleNames.filter(n => n !== portsRuleName);
   }
 }

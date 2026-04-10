@@ -10,6 +10,10 @@ const mockInstancesInsert = vi.fn();
 const mockInstancesGet = vi.fn();
 const mockInstancesDelete = vi.fn();
 
+// Mock wait returns: the wait-op helpers call opsClient.wait() which should
+// return [{ done: true }] immediately so tests don't actually poll.
+const mockOpsWait = vi.fn().mockResolvedValue([{ done: true }]);
+
 vi.mock('@google-cloud/compute', () => ({
   AddressesClient: vi.fn().mockImplementation(() => ({
     insert: mockAddressesInsert,
@@ -25,6 +29,9 @@ vi.mock('@google-cloud/compute', () => ({
     get: mockInstancesGet,
     delete: mockInstancesDelete,
   })),
+  RegionOperationsClient: vi.fn().mockImplementation(() => ({ wait: mockOpsWait })),
+  ZoneOperationsClient: vi.fn().mockImplementation(() => ({ wait: mockOpsWait })),
+  GlobalOperationsClient: vi.fn().mockImplementation(() => ({ wait: mockOpsWait })),
 }));
 
 import { provisionGcp } from '../../../../src/cloud/gcp/provision.js';
@@ -52,11 +59,11 @@ describe('provisionGcp', () => {
   });
 
   it('happy path: provisions all resources and returns instance', async () => {
-    mockAddressesInsert.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
+    mockAddressesInsert.mockResolvedValueOnce([{ name: 'op-mock' }]);
     mockAddressesGet.mockResolvedValueOnce([{ address: '34.78.1.2' }]);
-    mockFirewallsInsert.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]); // ssh rule
-    mockFirewallsInsert.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]); // ports rule
-    mockInstancesInsert.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
+    mockFirewallsInsert.mockResolvedValueOnce([{ name: 'op-mock' }]); // ssh rule
+    mockFirewallsInsert.mockResolvedValueOnce([{ name: 'op-mock' }]); // ports rule
+    mockInstancesInsert.mockResolvedValueOnce([{ name: 'op-mock' }]);
     mockInstancesGet.mockResolvedValueOnce([{
       status: 'RUNNING',
       networkInterfaces: [{ accessConfigs: [{ natIP: '34.78.1.2' }] }],
@@ -90,19 +97,19 @@ describe('provisionGcp', () => {
 
   it('rolls back on failure and throws CloudProvisionError', async () => {
     // Address reservation succeeds
-    mockAddressesInsert.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
+    mockAddressesInsert.mockResolvedValueOnce([{ name: 'op-mock' }]);
     mockAddressesGet.mockResolvedValueOnce([{ address: '34.78.1.2' }]);
     // Firewall rules succeed
-    mockFirewallsInsert.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]); // ssh
-    mockFirewallsInsert.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]); // ports
+    mockFirewallsInsert.mockResolvedValueOnce([{ name: 'op-mock' }]); // ssh
+    mockFirewallsInsert.mockResolvedValueOnce([{ name: 'op-mock' }]); // ports
     // Instance creation fails
     mockInstancesInsert.mockRejectedValueOnce(new Error('QUOTA_EXCEEDED'));
 
     // Rollback mocks (destroy will attempt to clean up what was recorded)
-    mockInstancesDelete.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
-    mockAddressesDelete.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
-    mockFirewallsDelete.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
-    mockFirewallsDelete.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
+    mockInstancesDelete.mockResolvedValueOnce([{ name: 'op-mock' }]);
+    mockAddressesDelete.mockResolvedValueOnce([{ name: 'op-mock' }]);
+    mockFirewallsDelete.mockResolvedValueOnce([{ name: 'op-mock' }]);
+    mockFirewallsDelete.mockResolvedValueOnce([{ name: 'op-mock' }]);
 
     const ledger: ResourceLedger = { kind: 'gcp', resources: {} };
 

@@ -7,6 +7,7 @@ import type { ProvisionSpec, ResourceLedger, Instance } from '../core.js';
 import { SIZE_MAP_GCP } from '../core.js';
 import { destroyGcp, zoneToRegion } from './destroy.js';
 import { CloudProvisionError } from '../../errors/index.js';
+import { waitRegionOp, waitZoneOp, waitGlobalOp } from './wait-op.js';
 
 const LABEL_MANAGED_BY = 'managed-by';
 const LABEL_DEPLOYMENT = 'hermes-deploy-deployment';
@@ -41,7 +42,7 @@ export async function provisionGcp(
         networkTier: 'PREMIUM',
       },
     });
-    await addressOp.promise();
+    await waitRegionOp(project, region, addressOp);
     r.static_ip_name = name;
 
     // Retrieve the allocated IP address
@@ -65,7 +66,7 @@ export async function provisionGcp(
         targetTags: [name],
       },
     });
-    await sshOp.promise();
+    await waitGlobalOp(project, sshOp);
     ruleNames.push(sshRuleName);
 
     // Rule B: inbound ports (only if non-empty)
@@ -82,7 +83,7 @@ export async function provisionGcp(
           targetTags: [name],
         },
       });
-      await portsOp.promise();
+      await waitGlobalOp(project, portsOp);
       ruleNames.push(portsRuleName);
     }
     r.firewall_rule_names = ruleNames;
@@ -122,7 +123,7 @@ export async function provisionGcp(
         },
       },
     });
-    await instanceOp.promise();
+    await waitZoneOp(project, zone, instanceOp);
     r.instance_name = name;
 
     // 4. Poll until RUNNING

@@ -5,6 +5,8 @@ const mockInstancesDelete = vi.fn();
 const mockAddressesDelete = vi.fn();
 const mockFirewallsDelete = vi.fn();
 
+const mockOpsWait = vi.fn().mockResolvedValue([{ done: true }]);
+
 vi.mock('@google-cloud/compute', () => ({
   InstancesClient: vi.fn().mockImplementation(() => ({
     delete: mockInstancesDelete,
@@ -15,6 +17,9 @@ vi.mock('@google-cloud/compute', () => ({
   FirewallsClient: vi.fn().mockImplementation(() => ({
     delete: mockFirewallsDelete,
   })),
+  RegionOperationsClient: vi.fn().mockImplementation(() => ({ wait: mockOpsWait })),
+  ZoneOperationsClient: vi.fn().mockImplementation(() => ({ wait: mockOpsWait })),
+  GlobalOperationsClient: vi.fn().mockImplementation(() => ({ wait: mockOpsWait })),
 }));
 
 import { destroyGcp, zoneToRegion } from '../../../../src/cloud/gcp/destroy.js';
@@ -27,10 +32,10 @@ describe('destroyGcp', () => {
   });
 
   it('deletes resources in reverse dependency order', async () => {
-    mockInstancesDelete.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
-    mockAddressesDelete.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
-    mockFirewallsDelete.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
-    mockFirewallsDelete.mockResolvedValueOnce([{ promise: () => Promise.resolve() }]);
+    mockInstancesDelete.mockResolvedValueOnce([{ name: 'op-mock' }]);
+    mockAddressesDelete.mockResolvedValueOnce([{ name: 'op-mock' }]);
+    mockFirewallsDelete.mockResolvedValueOnce([{ name: 'op-mock' }]);
+    mockFirewallsDelete.mockResolvedValueOnce([{ name: 'op-mock' }]);
 
     const ledger: ResourceLedger = {
       kind: 'gcp',

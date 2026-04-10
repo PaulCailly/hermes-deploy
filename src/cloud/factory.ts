@@ -24,6 +24,7 @@ export function createCloudProvider(opts: CreateProviderOptions): CloudProvider 
       }
       return new GcpProvider({
         zone: opts.zone,
+        project: opts.profile,  // GCP: hermes.toml profile = GCP project ID
         imageCacheFile: opts.imageCacheFile,
       });
   }
