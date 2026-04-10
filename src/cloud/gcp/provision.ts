@@ -114,7 +114,26 @@ export async function provisionGcp(
           }],
         }],
         metadata: {
-          items: [{ key: 'ssh-keys', value: `root:${spec.publicSshKey}` }],
+          items: [
+            { key: 'ssh-keys', value: `root:${spec.publicSshKey}` },
+            // Debian GCE images block root SSH by default
+            // (PermitRootLogin no). This startup script enables key-based
+            // root login so hermes-deploy can SSH as root — consistent
+            // with the AWS path (NixOS AMIs always allow root SSH).
+            // The script runs before the instance becomes SSH-reachable.
+            {
+              key: 'startup-script',
+              value: [
+                '#!/bin/bash',
+                'mkdir -p /root/.ssh',
+                `echo '${spec.publicSshKey}' >> /root/.ssh/authorized_keys`,
+                'chmod 700 /root/.ssh',
+                'chmod 600 /root/.ssh/authorized_keys',
+                "sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config",
+                'systemctl restart sshd',
+              ].join('\n'),
+            },
+          ],
         },
         tags: { items: [name] },
         labels: {
