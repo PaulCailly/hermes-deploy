@@ -106,6 +106,14 @@ ${sshPublicKey ? `
   users.users.root.openssh.authorizedKeys.keys = [
     "${sshPublicKey}"
   ];` : ''}
+${provider === 'gcp' ? `
+  # Disable Google OS Login — it conflicts with standard SSH key auth.
+  # google-compute-image.nix enables it by default, which adds a PAM
+  # module that rejects the session AFTER the SSH key is accepted,
+  # causing "Connection closed by ... port 22" on every login attempt.
+  # hermes-deploy manages SSH keys via NixOS config (above), not
+  # via Google's IAM-based OS Login.
+  security.googleOsLogin.enable = false;` : ''}
 
   networking.firewall.enable = true;
 
