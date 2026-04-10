@@ -143,6 +143,9 @@ export async function recordConfigAndHealthcheck(
   const documentPaths = Object.values(config.hermes.documents).map(p =>
     pathResolve(projectDir, p),
   );
+
+  // Full hash (includes hermes.toml) — used for the top-level no-op check
+  // so that ANY change to hermes.toml causes at least network reconciliation.
   const configHash = computeConfigHash(
     [
       tomlPath,
@@ -154,9 +157,23 @@ export async function recordConfigAndHealthcheck(
     true,
   );
 
+  // Nix-only hash (excludes hermes.toml) — used by the network-only
+  // optimization in runUpdate to skip nixos-rebuild when only network
+  // rules changed.
+  const nixHash = computeConfigHash(
+    [
+      pathResolve(projectDir, config.hermes.config_file),
+      pathResolve(projectDir, config.hermes.secrets_file),
+      config.hermes.nix_extra ? pathResolve(projectDir, config.hermes.nix_extra) : '',
+      ...documentPaths,
+    ].filter(Boolean),
+    true,
+  );
+
   await store.update(state => {
     const d = state.deployments[deploymentName]!;
     d.last_config_hash = configHash;
+    d.last_nix_hash = nixHash;
     d.last_deployed_at = new Date().toISOString();
   });
 

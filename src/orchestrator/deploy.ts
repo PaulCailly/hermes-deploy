@@ -102,6 +102,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
         created_at: state.deployments[config.name]?.created_at ?? now,
         last_deployed_at: now,
         last_config_hash: 'pending', // updated in phase 5
+        last_nix_hash: 'pending',    // updated in phase 5
         ssh_key_path: sshKeyPath,
         age_key_path: ageKeyPath,
         health: 'unknown',
@@ -126,7 +127,8 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
         region: config.cloud.region,
         created_at: state.deployments[config.name]?.created_at ?? now,
         last_deployed_at: now,
-        last_config_hash: 'pending',
+        last_config_hash: 'pending', // updated in phase 5
+        last_nix_hash: 'pending',    // updated in phase 5
         ssh_key_path: sshKeyPath,
         age_key_path: ageKeyPath,
         health: 'unknown',

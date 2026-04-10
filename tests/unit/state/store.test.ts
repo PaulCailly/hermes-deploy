@@ -23,7 +23,7 @@ describe('StateStore', () => {
 
   it('returns an empty state when the file does not exist', async () => {
     const state = await store.read();
-    expect(state.schema_version).toBe(2);
+    expect(state.schema_version).toBe(3);
     expect(state.deployments).toEqual({});
   });
 

@@ -102,6 +102,31 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   await opts.provider.reconcileNetwork(ledger, rules);
   reporter.phaseDone('provision');
 
+  // === Network-only optimization ===
+  // If the nix-relevant files (config_file, secrets_file, nix_extra,
+  // documents) haven't changed since the last successful rebuild, the
+  // network reconciliation above was all that was needed. Skip the
+  // expensive SSH + nixos-rebuild step.
+  const nixHash = computeConfigHash(
+    [
+      pathResolve(deployment.project_path, config.hermes.config_file),
+      pathResolve(deployment.project_path, config.hermes.secrets_file),
+      config.hermes.nix_extra
+        ? pathResolve(deployment.project_path, config.hermes.nix_extra)
+        : '',
+      ...documentPaths,
+    ].filter(Boolean),
+    true,
+  );
+  if (nixHash === deployment.last_nix_hash) {
+    reporter.success(`network rules updated — ${opts.deploymentName} config unchanged`);
+    return {
+      health: deployment.health === 'healthy' ? 'healthy' : 'unhealthy',
+      publicIp: deployment.instance_ip,
+      skipped: false,
+    };
+  }
+
   // === Phase 4 — bootstrap (SSH + upload + rebuild) ===
   reporter.phaseStart('bootstrap', 'Uploading config and running nixos-rebuild');
   const privateKeyContent = readFileSync(deployment.ssh_key_path, 'utf-8');

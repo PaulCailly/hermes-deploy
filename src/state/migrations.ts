@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 /**
  * Forward migration functions keyed by TARGET version.
@@ -61,6 +61,18 @@ const migrations: Record<number, (input: unknown) => unknown> = {
     // docs/migrating-from-m2.md.
     const v1 = input as { schema_version: number; deployments: Record<string, unknown> };
     return { ...v1, schema_version: 2 };
+  },
+  3: (input: unknown) => {
+    // M4 schema migration: adds last_nix_hash to each deployment.
+    // Defaults to 'sha256:unknown' so the first update after upgrading
+    // will always run nixos-rebuild (safe — rebuilding with the same
+    // config is idempotent).
+    const v2 = input as { schema_version: number; deployments: Record<string, unknown> };
+    const deployments: Record<string, unknown> = {};
+    for (const [name, dep] of Object.entries(v2.deployments)) {
+      deployments[name] = { last_nix_hash: 'sha256:unknown', ...(dep as object) };
+    }
+    return { ...v2, schema_version: 3, deployments };
   },
 };
 
