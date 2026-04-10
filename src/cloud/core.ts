@@ -61,3 +61,9 @@ export const SIZE_MAP_AWS: Record<Size, string> = {
   medium: 't3.medium',
   large: 't3.large',
 };
+
+export const SIZE_MAP_GCP: Record<Size, string> = {
+  small: 'e2-small',        // 2 vCPU, 2 GB
+  medium: 'e2-medium',      // 2 vCPU, 4 GB
+  large: 'e2-standard-2',   // 2 vCPU, 8 GB
+};

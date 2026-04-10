@@ -12,10 +12,10 @@ const AwsResourcesSchema = z.object({
 
 const GcpResourcesSchema = z.object({
   instance_name: z.string().min(1),
-  firewall_rule_name: z.string().min(1),
+  static_ip_name: z.string().min(1),
+  firewall_rule_names: z.array(z.string().min(1)),
   project_id: z.string().min(1),
   zone: z.string().min(1),
-  external_ip: z.string().min(1),
 });
 
 const BaseDeploymentSchema = z.object({
