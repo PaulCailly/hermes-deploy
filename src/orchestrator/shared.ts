@@ -52,6 +52,7 @@ export function validateProjectFiles(projectDir: string, config: HermesTomlConfi
 
 export interface BootstrapArgs {
   session: SshSession;
+  sessionFactory: () => Promise<SshSession>;
   projectDir: string;
   config: HermesTomlConfig;
   ageKeyPath: string;
@@ -107,7 +108,9 @@ export async function uploadAndRebuild(args: BootstrapArgs): Promise<void> {
   await session.exec('mkdir -p /var/lib/sops-nix');
   await session.uploadFile('/var/lib/sops-nix/age.key', ageKeyContent, 0o600);
 
-  const rebuild = await runNixosRebuild(session, (_s, line) => reporter.log(line));
+  // Run the rebuild via nohup + poll so it survives sshd restarts.
+  // The session used for uploads may die during the rebuild — that's OK.
+  const rebuild = await runNixosRebuild(args.sessionFactory, (_s, line) => reporter.log(line));
   if (!rebuild.success) {
     throw new Error(`nixos-rebuild failed:\n${rebuild.tail.join('\n')}`);
   }

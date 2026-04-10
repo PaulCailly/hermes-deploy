@@ -189,6 +189,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   try {
     await uploadAndRebuild({
       session,
+      sessionFactory: () => opts.sessionFactory(instance.publicIp, readFileSync(sshKeyPath, 'utf-8')),
       projectDir: opts.projectDir,
       config,
       ageKeyPath,

@@ -140,6 +140,7 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
     const sshPublicKey = existsSync(sshPubKeyPath) ? readFileSync(sshPubKeyPath, 'utf-8').trim() : undefined;
     await uploadAndRebuild({
       session,
+      sessionFactory: () => opts.sessionFactory(deployment.instance_ip, readFileSync(deployment.ssh_key_path, 'utf-8')),
       projectDir: deployment.project_path,
       config,
       ageKeyPath: deployment.age_key_path,
