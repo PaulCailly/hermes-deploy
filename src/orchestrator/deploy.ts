@@ -116,6 +116,31 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
       };
     });
   }
+
+  if (ledger.kind === 'gcp') {
+    await store.update(state => {
+      const now = new Date().toISOString();
+      state.deployments[config.name] = {
+        project_path: opts.projectDir,
+        cloud: 'gcp',
+        region: config.cloud.region,
+        created_at: state.deployments[config.name]?.created_at ?? now,
+        last_deployed_at: now,
+        last_config_hash: 'pending',
+        ssh_key_path: sshKeyPath,
+        age_key_path: ageKeyPath,
+        health: 'unknown',
+        instance_ip: instance.publicIp,
+        cloud_resources: {
+          instance_name: ledger.resources.instance_name!,
+          static_ip_name: ledger.resources.static_ip_name!,
+          firewall_rule_names: ledger.resources.firewall_rule_names!,
+          project_id: ledger.resources.project_id!,
+          zone: ledger.resources.zone!,
+        },
+      };
+    });
+  }
   reporter.phaseDone('provision');
 
   // === Phase 3 — wait for SSH ===
