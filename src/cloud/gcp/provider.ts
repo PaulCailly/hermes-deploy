@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import type {
+  AdoptResult,
   CloudProvider,
   ImageRef,
   Instance,
@@ -14,6 +15,7 @@ import { provisionGcp } from './provision.js';
 import { reconcileNetworkGcp } from './reconcile-network.js';
 import { destroyGcp } from './destroy.js';
 import { statusGcp } from './status.js';
+import { adoptGcp } from './adopt.js';
 
 export interface GcpProviderOptions {
   zone: string;
@@ -74,5 +76,10 @@ export class GcpProvider implements CloudProvider {
 
   status(ledger: ResourceLedger): Promise<InstanceStatus> {
     return statusGcp(ledger);
+  }
+
+  async adopt(deploymentName: string): Promise<AdoptResult> {
+    const project = await this.getProject();
+    return adoptGcp(project, this.opts.zone, deploymentName);
   }
 }

@@ -41,6 +41,17 @@ export interface InstanceStatus {
   publicIp: string | null;
 }
 
+/**
+ * Result of a successful adoption: the reconstructed ResourceLedger
+ * (ready to persist into state.toml) plus the currently-reachable public
+ * IP (if any), which the orchestrator needs to write `instance_ip` into
+ * state alongside the ledger.
+ */
+export interface AdoptResult {
+  ledger: ResourceLedger;
+  publicIp: string | null;
+}
+
 export interface CloudProvider {
   readonly name: 'aws' | 'gcp';
   resolveNixosImage(loc: Location): Promise<ImageRef>;
@@ -54,6 +65,21 @@ export interface CloudProvider {
   reconcileNetwork(ledger: ResourceLedger, rules: NetworkRules): Promise<void>;
   destroy(ledger: ResourceLedger): Promise<void>;
   status(ledger: ResourceLedger): Promise<InstanceStatus>;
+  /**
+   * Reconstruct a ResourceLedger for a deployment whose state entry was
+   * lost (e.g. the user moved to a new machine, or ~/.config/hermes-deploy
+   * was wiped). Looks up cloud resources by their provision-time tag
+   * markers (`managed-by=hermes-deploy` + `hermes-deploy/deployment=<name>`
+   * on AWS; equivalent labels on GCP). Returns the rebuilt ledger and the
+   * current public IP.
+   *
+   * Throws if no resources carrying the expected markers are found — the
+   * caller should present a clear "no deployment named X found in this
+   * cloud/region" error. The tag check is the safety rail: this method
+   * must NEVER adopt resources that don't carry the hermes-deploy
+   * provenance markers.
+   */
+  adopt(deploymentName: string): Promise<AdoptResult>;
 }
 
 export const SIZE_MAP_AWS: Record<Size, string> = {

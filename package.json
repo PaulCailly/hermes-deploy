@@ -1,23 +1,60 @@
 {
   "name": "@hermes-deploy/cli",
-  "version": "0.4.0-m4",
-  "description": "Deploy Nous Research's hermes-agent to AWS and GCP",
+  "version": "1.0.0",
+  "description": "Deploy Nous Research's hermes-agent to AWS and GCP in one command",
+  "license": "Apache-2.0",
+  "author": "Paul Cailly",
+  "homepage": "https://github.com/PaulCailly/hermes-deploy#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PaulCailly/hermes-deploy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PaulCailly/hermes-deploy/issues"
+  },
+  "keywords": [
+    "hermes-agent",
+    "nous-research",
+    "deploy",
+    "cli",
+    "nixos",
+    "aws",
+    "gcp",
+    "agent",
+    "llm"
+  ],
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "hermes-deploy": "./dist/cli.js"
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "lint": "eslint src tests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "engines": {
     "node": ">=20"

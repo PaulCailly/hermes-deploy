@@ -1,5 +1,6 @@
 import { EC2Client } from '@aws-sdk/client-ec2';
 import type {
+  AdoptResult,
   CloudProvider,
   ImageRef,
   Instance,
@@ -14,6 +15,7 @@ import { provisionAws } from './provision.js';
 import { reconcileNetworkAws } from './reconcile-network.js';
 import { destroyAws } from './destroy.js';
 import { statusAws } from './status.js';
+import { adoptAws } from './adopt.js';
 
 export interface AwsProviderOptions {
   region: string;
@@ -48,5 +50,9 @@ export class AwsProvider implements CloudProvider {
 
   status(ledger: ResourceLedger): Promise<InstanceStatus> {
     return statusAws(this.ec2, ledger);
+  }
+
+  adopt(deploymentName: string): Promise<AdoptResult> {
+    return adoptAws(this.ec2, deploymentName, this.opts.region);
   }
 }

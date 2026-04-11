@@ -7,6 +7,7 @@ import { sshCommand } from './commands/ssh.js';
 import { lsCommand } from './commands/ls.js';
 import { logsCommand } from './commands/logs.js';
 import { initCommand } from './commands/init.js';
+import { adoptCommand } from './commands/adopt.js';
 import {
   secretSet,
   secretGet,
@@ -16,12 +17,17 @@ import {
 } from './commands/secret.js';
 import { keyExport, keyImport, keyPath } from './commands/key.js';
 
+// HERMES_DEPLOY_VERSION is replaced at build time by tsup's `define`
+// with the version from package.json, so `hermes-deploy --version`
+// always matches the published package.
+declare const HERMES_DEPLOY_VERSION: string;
+
 const program = new Command();
 
 program
   .name('hermes-deploy')
   .description('Deploy hermes-agent to AWS or GCP')
-  .version('0.4.0-m4');
+  .version(HERMES_DEPLOY_VERSION);
 
 program
   .command('init')
@@ -90,9 +96,14 @@ program
   .argument('[name]', 'deployment name (defaults to ./hermes.toml)')
   .option('--name <name>', 'deployment name (use instead of cwd lookup)')
   .option('--project <path>', 'project directory (use instead of cwd lookup)')
+  .option('--json', 'output as JSON instead of human-formatted text')
   .action(async (positionalName, opts) => {
     try {
-      await statusCommand({ name: opts.name ?? positionalName, projectPath: opts.project });
+      await statusCommand({
+        name: opts.name ?? positionalName,
+        projectPath: opts.project,
+        json: opts.json,
+      });
     } catch (e) {
       console.error(`hermes-deploy status: ${(e as Error).message}`);
       process.exit(1);
@@ -132,11 +143,37 @@ program
   .command('ls')
   .description('List all deployments across all clouds')
   .option('--watch', 'poll live status continuously (Ink dashboard, post-Phase H)')
+  .option('--json', 'output as JSON instead of a table')
   .action(async (opts) => {
     try {
-      await lsCommand({ watch: opts.watch });
+      await lsCommand({ watch: opts.watch, json: opts.json });
     } catch (e) {
       console.error(`hermes-deploy ls: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('adopt')
+  .description(
+    'Rebuild the local state entry for a deployment by discovering its cloud resources via tags',
+  )
+  .requiredOption('--name <name>', 'deployment name (required)')
+  .option('--project <path>', 'project directory (defaults to cwd walk)')
+  .option('--force', 'replace an existing state entry')
+  .option('--dry-run', 'preview the rebuilt ledger without writing state')
+  .option('--json', 'output the rebuilt record as JSON')
+  .action(async (opts) => {
+    try {
+      await adoptCommand({
+        name: opts.name,
+        projectPath: opts.project,
+        force: opts.force,
+        dryRun: opts.dryRun,
+        json: opts.json,
+      });
+    } catch (e) {
+      console.error(`hermes-deploy adopt: ${(e as Error).message}`);
       process.exit(1);
     }
   });
@@ -191,10 +228,15 @@ secret
   .command('list')
   .option('--name <name>', 'deployment name')
   .option('--project <path>', 'project directory')
+  .option('--json', 'output the key list as a JSON array')
   .action(async (opts) => {
     try {
       const keys = await secretList({ name: opts.name, projectPath: opts.project });
-      for (const k of keys) console.log(k);
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(keys, null, 2) + '\n');
+      } else {
+        for (const k of keys) console.log(k);
+      }
     } catch (e) {
       console.error(`hermes-deploy secret list: ${(e as Error).message}`);
       process.exit(1);
@@ -243,9 +285,15 @@ key
 key
   .command('path <name>')
   .description("Print the on-disk path of a deployment's age key")
-  .action(async (name) => {
+  .option('--json', 'output as JSON ({"name": ..., "path": ...}) instead of bare path')
+  .action(async (name, opts) => {
     try {
-      console.log(await keyPath({ name }));
+      const path = await keyPath({ name });
+      if (opts.json) {
+        process.stdout.write(JSON.stringify({ name, path }, null, 2) + '\n');
+      } else {
+        console.log(path);
+      }
     } catch (e) {
       console.error(`hermes-deploy key path: ${(e as Error).message}`);
       process.exit(1);

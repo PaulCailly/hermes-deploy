@@ -82,11 +82,15 @@ export async function collectDeploymentSummaries(
 }
 
 /**
- * CLI entry — renders a plain-text table. A future Ink dashboard will
- * wrap collectDeploymentSummaries for the --watch case (deferred to
- * the M2 follow-up that builds the live Dashboard component).
+ * CLI entry — renders a plain-text table, or JSON when `json: true`.
+ * A future Ink dashboard will wrap collectDeploymentSummaries for the
+ * --watch case (deferred to the M2 follow-up that builds the live
+ * Dashboard component).
  */
-export async function lsCommand(opts: { watch?: boolean }): Promise<void> {
+export async function lsCommand(opts: {
+  watch?: boolean;
+  json?: boolean;
+}): Promise<void> {
   if (opts.watch) {
     throw new Error(
       '--watch is not yet implemented. The live Ink dashboard ships in a follow-up to phase H.',
@@ -94,6 +98,12 @@ export async function lsCommand(opts: { watch?: boolean }): Promise<void> {
   }
 
   const summaries = await collectDeploymentSummaries({ live: true });
+
+  if (opts.json) {
+    process.stdout.write(JSON.stringify(summaries, null, 2) + '\n');
+    return;
+  }
+
   if (summaries.length === 0) {
     console.log('No deployments.');
     return;

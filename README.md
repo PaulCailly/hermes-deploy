@@ -2,10 +2,10 @@
 
 A CLI for deploying [hermes-agent](https://hermes-agent.nousresearch.com/) to a cloud VPS in one command.
 
-> **Status: M3 (schema redesign).** AWS-only, full lifecycle, with the
-> hermes.toml schema now properly mapping to upstream's services.hermes-agent
-> options. config.yaml lives next to hermes.toml and is uploaded verbatim;
-> secrets are dotenv-encoded sops files. M4 brings GCP.
+> **Status: 1.0.0.** AWS and GCP both ship as first-class providers with
+> full lifecycle parity. The CLI surface, the `hermes.toml` schema, and
+> the state-file format are stable and follow semver from this release on.
+> See [CHANGELOG.md](./CHANGELOG.md) for what landed.
 
 ## Quick links
 
@@ -13,7 +13,7 @@ A CLI for deploying [hermes-agent](https://hermes-agent.nousresearch.com/) to a 
 - **[hermes.toml schema reference](docs/schema-reference.md)** — every field, every default
 - **[Multi-machine key sync](docs/multi-machine-key-sync.md)** — moving a deployment between machines
 - **[v1 design spec](docs/specs/2026-04-09-hermes-deploy-design.md)** — the architectural decisions
-- **[M1 plan](docs/plans/2026-04-09-hermes-deploy-M1-aws-skateboard.md)** and **[M2 plan](docs/plans/2026-04-09-hermes-deploy-M2-aws-feature-complete.md)** — implementation breakdowns
+- **[CHANGELOG](./CHANGELOG.md)** — release history
 
 ## Prerequisites
 
@@ -22,14 +22,31 @@ On the machine running `hermes-deploy`:
 - Node 20 or newer
 - `age-keygen` and `sops` on PATH (`brew install age sops` on macOS)
 - `ssh` and `ssh-keygen` on PATH (ships with macOS / standard on Linux)
-- AWS credentials configured (`~/.aws/credentials` or `AWS_*` env vars)
+- For AWS deployments: AWS credentials (`~/.aws/credentials` or `AWS_*` env vars)
+- For GCP deployments: Application Default Credentials (`gcloud auth application-default login`)
 
-On the AWS account:
+On the AWS account (if using AWS):
 
 - An IAM user/role with permissions to create EC2 key pairs, security groups, instances, and elastic IPs
 - A region where NixOS publishes community AMIs (e.g. `us-east-1`, `eu-west-3`, `ap-southeast-1`)
 
-## Install (from source for now)
+On the GCP project (if using GCP):
+
+- The Compute Engine API enabled
+- A service account or user with Compute Admin (or equivalent) role
+- A region/zone with the `nixos-cloud` image family available
+
+## Install
+
+```bash
+npm install -g @hermes-deploy/cli
+# or
+pnpm add -g @hermes-deploy/cli
+# or, one-shot:
+npx @hermes-deploy/cli init
+```
+
+To install from source:
 
 ```bash
 git clone git@github.com:PaulCailly/hermes-deploy.git
@@ -38,8 +55,6 @@ npm install
 npm run build
 npm link  # makes `hermes-deploy` available globally
 ```
-
-A proper npm release lands in M4.
 
 ## Commands at a glance
 
@@ -52,6 +67,7 @@ hermes-deploy logs [name]                         # stream journalctl until Ctrl
 hermes-deploy ssh [name]                          # interactive shell on the box
 hermes-deploy ls                                  # list all deployments across clouds
 hermes-deploy destroy [name] --yes                # tear down completely
+hermes-deploy adopt --name <name>                 # rebuild lost state from cloud-side tags
 
 hermes-deploy secret set <key> <value>            # add a secret
 hermes-deploy secret get <key>                    # print a secret
@@ -65,6 +81,31 @@ hermes-deploy key path <name>                     # print the on-disk path
 ```
 
 Every command that operates on a deployment supports `--name <name>` and `--project <path>` flags. Without either flag, the command walks up from cwd to find a `hermes.toml`.
+
+### Scripting and JSON output
+
+Read-only commands (`status`, `ls`, `secret list`, `key path`, `adopt`) support `--json` to emit a machine-readable payload on stdout instead of human-formatted text. Example:
+
+```bash
+hermes-deploy status acme-discord --json | jq -r .live.state
+hermes-deploy ls --json | jq '.[] | select(.storedHealth == "healthy") | .name'
+```
+
+### Library import
+
+The package also exposes a library entry point for programmatic use — useful when building higher-level tools on top of `hermes-deploy` (e.g. a managed-service control plane):
+
+```typescript
+import {
+  createCloudProvider,
+  runDeploy,
+  StateStore,
+  getStatePaths,
+  adoptDeployment,
+} from '@hermes-deploy/cli';
+```
+
+The library surface follows the same semver contract as the CLI.
 
 ## Five-minute walkthrough
 
@@ -107,15 +148,15 @@ Once the cache is populated (run `cachix push <name> /run/current-system` from t
 - `~/.config/hermes-deploy/age_keys/<name>` — per-deployment age private key
 - `~/.cache/hermes-deploy/images.json` — 1-hour AMI lookup cache
 
-## What's deferred to M4+
+## What's deferred to post-1.0
 
-- **GCP provider implementation**
-- **Pre-baked AMI pipeline** for sub-2-minute first deploys
-- **Cachix population workflow** (right now you populate the cache by hand)
 - **`hermes-deploy ls --watch` dashboard**
-- **Network-only-update optimization** (skip nixos-rebuild when only network config changed)
-- **GitHub Actions CI / release-please / npm publish**
+- **Pre-baked AMI / GCE image pipeline** for sub-2-minute first deploys
+- **Automated Cachix population workflow** (right now you populate the cache by hand)
+- **Custom VPCs, private-only networking, SSM/IAP-based SSH**
+
+See [docs/specs/2026-04-09-hermes-deploy-design.md](docs/specs/2026-04-09-hermes-deploy-design.md) §13 for the rationale on each cut.
 
 ## License
 
-Apache 2.0.
+[Apache 2.0](./LICENSE).
