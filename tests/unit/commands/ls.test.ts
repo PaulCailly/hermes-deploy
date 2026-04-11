@@ -15,6 +15,7 @@ function stubProvider(state: 'running' | 'stopped' = 'running'): CloudProvider {
     reconcileNetwork: vi.fn(),
     destroy: vi.fn(),
     status: vi.fn(async () => ({ state, publicIp: '203.0.113.42' })),
+    adopt: vi.fn(),
   };
 }
 
@@ -102,6 +103,7 @@ describe('collectDeploymentSummaries', () => {
       reconcileNetwork: vi.fn(),
       destroy: vi.fn(),
       status: vi.fn(async () => { throw new Error('boom'); }),
+      adopt: vi.fn(),
     };
     const summaries = await collectDeploymentSummaries({
       providerFactory: () => failingProvider,

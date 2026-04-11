@@ -20,7 +20,31 @@ breaking changes ship with state migrations and a major-version bump.
 
 - **Two-cloud support.** AWS and GCP both ship as first-class providers
   behind a single `CloudProvider` interface, with full lifecycle parity:
-  `init`, `up`, `update`, `destroy`, `status`, `logs`, `ssh`, `ls`.
+  `init`, `up`, `update`, `destroy`, `status`, `logs`, `ssh`, `ls`, `adopt`.
+- **`hermes-deploy adopt`.** Rebuild a lost state entry by discovering
+  cloud resources via their provision-time
+  `managed-by=hermes-deploy` + `hermes-deploy/deployment=<name>` tags
+  (AWS) or labels (GCP). Safe by construction: the discovery is scoped
+  to resources that carry both markers, so adopt will never touch
+  unrelated infrastructure. Supports `--dry-run`, `--force`, and
+  `--json` for scripting.
+- **`--json` output mode** on `status`, `ls`, `secret list`, `key path`,
+  and `adopt`. Emits a stable, machine-readable schema to stdout for
+  scripting and managed-service integration. The non-JSON path is
+  unchanged.
+- **Library entry point.** The package now exposes `src/index.ts` as
+  the `@hermes-deploy/cli` main, re-exporting the orchestrator
+  (`runDeploy`, `runUpdate`, `runDestroy`), cloud providers
+  (`createCloudProvider`, `AwsProvider`, `GcpProvider`), schemas
+  (`StateTomlSchema`, `loadHermesToml`), state store (`StateStore`,
+  `getStatePaths`, `runMigrations`), error classes, and
+  `adoptDeployment`. Follows the same semver contract as the CLI.
+- **E2E test suite.** Gated under `tests/e2e/` + `vitest.e2e.config.ts`,
+  run via `npm run test:e2e`. Exercises the full CloudProvider lifecycle
+  (resolve image → provision → status → adopt → destroy) against real
+  AWS and GCP accounts. A new `.github/workflows/e2e.yml` runs these
+  nightly and on maintainer-triggered manual dispatch; regular PRs
+  continue to run only the unit/integration suite.
 - **NixOS-native deployment.** Provisions a community NixOS image (AWS AMI
   or GCE family image), bootstraps it over SSH, and runs `nixos-rebuild
   switch` to bring up the `hermes-agent` systemd service. GCE uses
@@ -82,11 +106,7 @@ specific unblocking trigger; see `docs/specs/2026-04-09-hermes-deploy-design.md`
 - No pre-baked AMI / GCE image pipeline; first-deploy builds take 3–8
   minutes on a small instance unless a Cachix cache is configured.
 - No automated Cachix population workflow.
-- No `hermes-deploy adopt` for state recovery from cloud-side resource
-  tags. Lost state requires manual intervention.
 - No custom VPCs, private-only networking, or SSM/IAP-based SSH.
-- No structured `--json` output mode for scripting.
-- E2E tests against real AWS / GCP are not yet wired into CI.
 
 ## [0.4.0-m4] - 2026-04-10
 

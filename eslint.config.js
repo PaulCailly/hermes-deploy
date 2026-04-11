@@ -22,7 +22,18 @@ export default [
     },
   },
   {
-    files: ['src/cloud/aws/**/*.ts', 'src/cloud/gcp/**/*.ts', 'src/cloud/factory.ts', 'tests/**/cloud/**/*.ts'],
+    files: [
+      'src/cloud/aws/**/*.ts',
+      'src/cloud/gcp/**/*.ts',
+      'src/cloud/factory.ts',
+      // The library entry point deliberately re-exports the provider
+      // classes as part of the public API surface (see comment in
+      // src/index.ts). E2E tests are covered by the tests/e2e rule
+      // below.
+      'src/index.ts',
+      'tests/**/cloud/**/*.ts',
+      'tests/e2e/**/*.ts',
+    ],
     rules: { 'no-restricted-imports': 'off' },
   },
 ];

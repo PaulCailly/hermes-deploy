@@ -67,6 +67,7 @@ hermes-deploy logs [name]                         # stream journalctl until Ctrl
 hermes-deploy ssh [name]                          # interactive shell on the box
 hermes-deploy ls                                  # list all deployments across clouds
 hermes-deploy destroy [name] --yes                # tear down completely
+hermes-deploy adopt --name <name>                 # rebuild lost state from cloud-side tags
 
 hermes-deploy secret set <key> <value>            # add a secret
 hermes-deploy secret get <key>                    # print a secret
@@ -80,6 +81,31 @@ hermes-deploy key path <name>                     # print the on-disk path
 ```
 
 Every command that operates on a deployment supports `--name <name>` and `--project <path>` flags. Without either flag, the command walks up from cwd to find a `hermes.toml`.
+
+### Scripting and JSON output
+
+Read-only commands (`status`, `ls`, `secret list`, `key path`, `adopt`) support `--json` to emit a machine-readable payload on stdout instead of human-formatted text. Example:
+
+```bash
+hermes-deploy status acme-discord --json | jq -r .live.state
+hermes-deploy ls --json | jq '.[] | select(.storedHealth == "healthy") | .name'
+```
+
+### Library import
+
+The package also exposes a library entry point for programmatic use — useful when building higher-level tools on top of `hermes-deploy` (e.g. a managed-service control plane):
+
+```typescript
+import {
+  createCloudProvider,
+  runDeploy,
+  StateStore,
+  getStatePaths,
+  adoptDeployment,
+} from '@hermes-deploy/cli';
+```
+
+The library surface follows the same semver contract as the CLI.
 
 ## Five-minute walkthrough
 
@@ -127,9 +153,7 @@ Once the cache is populated (run `cachix push <name> /run/current-system` from t
 - **`hermes-deploy ls --watch` dashboard**
 - **Pre-baked AMI / GCE image pipeline** for sub-2-minute first deploys
 - **Automated Cachix population workflow** (right now you populate the cache by hand)
-- **`hermes-deploy adopt`** for state recovery from cloud-side resource tags
-- **`--json` output mode** for scripting and managed-service integration
-- **E2E tests against real AWS / GCP** in CI
+- **Custom VPCs, private-only networking, SSM/IAP-based SSH**
 
 See [docs/specs/2026-04-09-hermes-deploy-design.md](docs/specs/2026-04-09-hermes-deploy-design.md) §13 for the rationale on each cut.
 

@@ -1,0 +1,139 @@
+name: e2e
+
+# Gated E2E tests against real AWS + GCP accounts. These are expensive
+# (they provision real VMs, cost real money) and slow (minutes per
+# run). They run on:
+#
+#   - Manual dispatch (maintainers only — `workflow_dispatch`)
+#   - A nightly cron job that runs the full suite against both clouds
+#     and also sweeps up any stray resources tagged
+#     `managed-by=hermes-deploy` older than 4 hours.
+#
+# They deliberately do NOT run on every PR — community PRs don't have
+# access to the `e2e` environment secrets. Maintainers who want E2E
+# coverage on a PR can trigger this workflow manually with the PR's
+# SHA via the workflow_dispatch `ref` input.
+#
+# Required repository secrets (stored under the `e2e` environment):
+#   - AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or an assume-role with OIDC)
+#   - AWS_REGION (e.g. us-east-1)
+#   - GCP_SERVICE_ACCOUNT_KEY (JSON-encoded service account key)
+#   - GCP_PROJECT_ID
+#   - GCP_ZONE (e.g. europe-west1-b)
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws:
+        description: 'Run AWS E2E tests'
+        type: boolean
+        required: false
+        default: true
+      gcp:
+        description: 'Run GCP E2E tests'
+        type: boolean
+        required: false
+        default: true
+  schedule:
+    # 03:17 UTC daily — off-peak for both AWS us-east-1 and GCP eu.
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+  id-token: write  # for AWS OIDC if/when we switch to assume-role
+
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+jobs:
+  aws:
+    name: AWS lifecycle
+    if: github.event_name == 'schedule' || github.event.inputs.aws == 'true'
+    runs-on: ubuntu-latest
+    environment: e2e
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run AWS E2E
+        env:
+          HERMES_E2E_AWS: '1'
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: npm run test:e2e -- tests/e2e/aws-lifecycle.e2e.test.ts
+
+  gcp:
+    name: GCP lifecycle
+    if: github.event_name == 'schedule' || github.event.inputs.gcp == 'true'
+    runs-on: ubuntu-latest
+    environment: e2e
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run GCP E2E
+        env:
+          HERMES_E2E_GCP: '1'
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          HERMES_E2E_GCP_ZONE: ${{ secrets.GCP_ZONE }}
+        run: npm run test:e2e -- tests/e2e/gcp-lifecycle.e2e.test.ts
+
+  sweep:
+    name: Nightly resource sweep
+    # Only run sweep on the cron schedule — manual dispatches should
+    # only clean up after themselves via the test's own afterEach.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    environment: e2e
+    needs: [aws, gcp]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Sweep AWS leftovers
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          # Placeholder — the sweeper script lives in scripts/e2e-sweep.mjs
+          # and deletes any hermes-deploy-tagged resources older than 4h.
+          # When the script lands, replace this block with its invocation.
+          echo "nightly sweep placeholder — implement scripts/e2e-sweep.mjs"

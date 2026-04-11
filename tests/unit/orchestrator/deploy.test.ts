@@ -32,6 +32,10 @@ function fakeProvider(): CloudProvider {
     reconcileNetwork: vi.fn(async () => {}),
     destroy: vi.fn(async () => {}),
     status: vi.fn(async () => ({ state: 'running' as const, publicIp: '203.0.113.42' })),
+    adopt: vi.fn(async () => ({
+      ledger: { kind: 'aws' as const, resources: {} },
+      publicIp: null,
+    })),
   };
 }
 
