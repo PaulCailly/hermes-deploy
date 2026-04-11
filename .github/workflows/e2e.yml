@@ -105,9 +105,13 @@ jobs:
 
   sweep:
     name: Nightly resource sweep
-    # Only run sweep on the cron schedule — manual dispatches should
-    # only clean up after themselves via the test's own afterEach.
-    if: github.event_name == 'schedule'
+    # Run sweep on the cron schedule after the tests. `if: always()`
+    # so the sweep still runs even when the test jobs failed — a
+    # crashed E2E run is the exact case where orphan resources are
+    # most likely to be left behind. Manual dispatches don't need
+    # the sweep because the tests clean up after themselves in
+    # their own destroy step.
+    if: always() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     environment: e2e
     needs: [aws, gcp]
@@ -124,16 +128,25 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
       - name: Sweep AWS leftovers
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          # Placeholder — the sweeper script lives in scripts/e2e-sweep.mjs
-          # and deletes any hermes-deploy-tagged resources older than 4h.
-          # When the script lands, replace this block with its invocation.
-          echo "nightly sweep placeholder — implement scripts/e2e-sweep.mjs"
+        # The sweeper only touches resources carrying three rails:
+        #   1. `managed-by=hermes-deploy` tag
+        #   2. `hermes-deploy/deployment=<e2e-...>` prefix
+        #   3. Cloud-side creation timestamp > 4 hours old
+        # All three must pass — see scripts/e2e-sweep.mjs for details.
+        run: node scripts/e2e-sweep.mjs --cloud aws --region "$AWS_REGION" --max-age-hours 4
+
+      - name: Sweep GCP leftovers
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          HERMES_E2E_GCP_ZONE: ${{ secrets.GCP_ZONE }}
+        run: node scripts/e2e-sweep.mjs --cloud gcp --project "$GOOGLE_CLOUD_PROJECT" --zone "$HERMES_E2E_GCP_ZONE" --max-age-hours 4

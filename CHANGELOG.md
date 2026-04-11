@@ -44,7 +44,11 @@ breaking changes ship with state migrations and a major-version bump.
   (resolve image → provision → status → adopt → destroy) against real
   AWS and GCP accounts. A new `.github/workflows/e2e.yml` runs these
   nightly and on maintainer-triggered manual dispatch; regular PRs
-  continue to run only the unit/integration suite.
+  continue to run only the unit/integration suite. A companion
+  `scripts/e2e-sweep.mjs` script runs after the nightly test jobs and
+  tears down any leaked resources older than 4 hours, gated by three
+  defense-in-depth safety rails (managed-by tag + `e2e-` deployment
+  prefix + cloud-side age threshold).
 - **NixOS-native deployment.** Provisions a community NixOS image (AWS AMI
   or GCE family image), bootstraps it over SSH, and runs `nixos-rebuild
   switch` to bring up the `hermes-agent` systemd service. GCE uses
