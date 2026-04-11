@@ -7,6 +7,10 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # id-token is required for:
+  #   (a) npm trusted publishing via OIDC (the publish job below)
+  #   (b) npm provenance, which is automatic when publishing via
+  #       trusted publishing from a public repo + public package
   id-token: write
 
 jobs:
@@ -30,7 +34,16 @@ jobs:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
+    # The npm-publish environment still gates this job — it adds an
+    # approval step (if required-reviewers is enabled) and restricts
+    # which branches can publish. No NPM_TOKEN secret is needed
+    # anymore: authentication happens via OIDC against the trusted
+    # publisher configured on npmjs.com. See docs/releasing.md for
+    # the one-time setup that makes this job work.
     environment: npm-publish
+    # id-token: write is inherited from the top-level permissions
+    # block above so that the npm CLI can mint an OIDC token and
+    # exchange it for a short-lived publish credential.
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -38,9 +51,18 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          # Node 22 LTS ships with npm 10.x; we upgrade to npm 11.5+
+          # explicitly below because trusted publishing requires it.
+          node-version: '22'
           cache: npm
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm to 11.5+ (required for trusted publishing)
+        # Trusted publishing via OIDC was added in npm 11.5.1. Node 22
+        # ships with npm 10.x, so we upgrade explicitly here. Locking
+        # to the major version so a future breaking change in npm 12
+        # doesn't silently break the release pipeline.
+        run: npm install -g npm@11
 
       - name: Install age + sops
         # Required by the test suite (secrets/sops tests skip otherwise).
@@ -62,7 +84,11 @@ jobs:
           npm run test
           npm run build
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to npm via trusted publishing
+        # No NODE_AUTH_TOKEN / NPM_TOKEN: the npm CLI detects the
+        # GitHub Actions OIDC environment and uses it automatically.
+        # No --provenance flag: trusted publishing from a public repo
+        # to a public package generates provenance attestations by
+        # default. No --access public: publishConfig.access in
+        # package.json already declares it.
+        run: npm publish
