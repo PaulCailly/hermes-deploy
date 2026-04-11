@@ -1,5 +1,5 @@
 /**
- * Public library surface for `@hermes-deploy/cli`.
+ * Public library surface for `@paulcailly/hermes-deploy`.
  *
  * The CLI bin (`dist/cli.js`) is the primary distribution, but the
  * package also exposes a library entry so higher-level tools (the
