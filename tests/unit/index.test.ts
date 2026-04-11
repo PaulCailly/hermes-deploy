@@ -9,7 +9,7 @@ import * as api from '../../src/index.js';
  *
  * Adding new exports is fine; removing or renaming one fails here.
  */
-describe('@hermes-deploy/cli library entry', () => {
+describe('@paulcailly/hermes-deploy library entry', () => {
   it('re-exports the cloud provider surface', () => {
     expect(api.createCloudProvider).toBeTypeOf('function');
     expect(api.AwsProvider).toBeTypeOf('function');

@@ -39,11 +39,11 @@ On the GCP project (if using GCP):
 ## Install
 
 ```bash
-npm install -g @hermes-deploy/cli
+npm install -g @paulcailly/hermes-deploy
 # or
-pnpm add -g @hermes-deploy/cli
+pnpm add -g @paulcailly/hermes-deploy
 # or, one-shot:
-npx @hermes-deploy/cli init
+npx @paulcailly/hermes-deploy init
 ```
 
 To install from source:
@@ -102,7 +102,7 @@ import {
   StateStore,
   getStatePaths,
   adoptDeployment,
-} from '@hermes-deploy/cli';
+} from '@paulcailly/hermes-deploy';
 ```
 
 The library surface follows the same semver contract as the CLI.
