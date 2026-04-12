@@ -19,6 +19,14 @@ export interface ExecStreamUntilResult {
   exitCode: number | null;
 }
 
+export interface ShellHandle {
+  write(data: string | Buffer): void;
+  resize(cols: number, rows: number): void;
+  onData(cb: (data: Buffer) => void): void;
+  onClose(cb: () => void): void;
+  close(): void;
+}
+
 export interface SshSession {
   exec(command: string): Promise<ExecResult>;
   execStream(
@@ -38,6 +46,12 @@ export interface SshSession {
     onLine: (stream: 'stdout' | 'stderr', line: string) => void,
   ): Promise<ExecStreamUntilResult>;
   uploadFile(remotePath: string, contents: Buffer | string, mode?: number): Promise<void>;
+  /**
+   * Open an interactive PTY shell on the remote host. Used by the
+   * dashboard's SSH tab to provide xterm.js-backed terminal access.
+   * Optional — not required by the CLI flow, only by the web server.
+   */
+  shell?(opts?: { term?: string; cols?: number; rows?: number }): Promise<ShellHandle>;
   dispose(): Promise<void>;
 }
 
@@ -185,10 +199,34 @@ export async function createSshSession(
       });
     });
 
+  const shell = (
+    opts?: { term?: string; cols?: number; rows?: number },
+  ): Promise<ShellHandle> =>
+    new Promise((resolve, reject) => {
+      client.shell(
+        {
+          term: opts?.term ?? 'xterm-256color',
+          cols: opts?.cols ?? 80,
+          rows: opts?.rows ?? 24,
+        },
+        (err: Error | undefined, stream: ClientChannel) => {
+          if (err) return reject(err);
+          const handle: ShellHandle = {
+            write(data) { stream.write(data); },
+            resize(cols, rows) { stream.setWindow(rows, cols, 0, 0); },
+            onData(cb) { stream.on('data', cb); },
+            onClose(cb) { stream.on('close', cb); },
+            close() { stream.end(); },
+          };
+          resolve(handle);
+        },
+      );
+    });
+
   const dispose = (): Promise<void> => {
     client.end();
     return Promise.resolve();
   };
 
-  return { exec, execStream, execStreamUntil, uploadFile, dispose };
+  return { exec, execStream, execStreamUntil, uploadFile, shell, dispose };
 }

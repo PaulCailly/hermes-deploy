@@ -68,6 +68,7 @@ hermes-deploy ssh [name]                          # interactive shell on the box
 hermes-deploy ls                                  # list all deployments across clouds
 hermes-deploy destroy [name] --yes                # tear down completely
 hermes-deploy adopt --name <name>                 # rebuild lost state from cloud-side tags
+hermes-deploy dashboard                           # start the local web dashboard
 
 hermes-deploy secret set <key> <value>            # add a secret
 hermes-deploy secret get <key>                    # print a secret
@@ -148,9 +149,20 @@ Once the cache is populated (run `cachix push <name> /run/current-system` from t
 - `~/.config/hermes-deploy/age_keys/<name>` — per-deployment age private key
 - `~/.cache/hermes-deploy/images.json` — 1-hour AMI lookup cache
 
+## Web dashboard
+
+`hermes-deploy dashboard` starts a local web UI with full CLI parity — monitor deployments, stream logs, open an SSH terminal, edit config files, manage secrets, and trigger lifecycle operations with real-time phase progress.
+
+```bash
+hermes-deploy dashboard                           # random port, auto-opens browser
+hermes-deploy dashboard --port 4173               # fixed port
+hermes-deploy dashboard --no-open                 # don't open browser
+```
+
+The dashboard binds to `127.0.0.1` by default with random-token auth. The token is passed via the URL fragment and never logged.
+
 ## What's deferred to post-1.0
 
-- **`hermes-deploy ls --watch` dashboard**
 - **Pre-baked AMI / GCE image pipeline** for sub-2-minute first deploys
 - **Automated Cachix population workflow** (right now you populate the cache by hand)
 - **Custom VPCs, private-only networking, SSM/IAP-based SSH**

@@ -8,6 +8,7 @@ import { lsCommand } from './commands/ls.js';
 import { logsCommand } from './commands/logs.js';
 import { initCommand } from './commands/init.js';
 import { adoptCommand } from './commands/adopt.js';
+import { dashboardCommand } from './commands/dashboard.js';
 import {
   secretSet,
   secretGet,
@@ -296,6 +297,27 @@ key
       }
     } catch (e) {
       console.error(`hermes-deploy key path: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('dashboard')
+  .description('Start the local web dashboard')
+  .option('--host <host>', 'bind address', '127.0.0.1')
+  .option('--port <port>', 'TCP port (0 = random available)', (v) => Number(v), 0)
+  .option('--no-open', 'do not open a browser window')
+  .option('--no-auth', 'disable token auth (dangerous)')
+  .action(async (opts) => {
+    try {
+      await dashboardCommand({
+        host: opts.host,
+        port: opts.port,
+        open: opts.open,
+        auth: opts.auth,
+      });
+    } catch (e) {
+      console.error(`hermes-deploy dashboard: ${(e as Error).message}`);
       process.exit(1);
     }
   });
