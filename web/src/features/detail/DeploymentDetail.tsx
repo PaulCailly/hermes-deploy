@@ -25,11 +25,17 @@ const TABS = [
   { id: 'secrets', label: 'Secrets' },
 ] as const;
 
+const TAB_IDS = TABS.map(t => t.id as string);
+
+function normalizeTab(value: string | undefined): string {
+  return value && TAB_IDS.includes(value) ? value : 'overview';
+}
+
 export function DeploymentDetail({ name, initialTab, onBack, onJob }: Props) {
-  const [tab, setTab] = useState(initialTab ?? 'overview');
+  const [tab, setTab] = useState(() => normalizeTab(initialTab));
 
   useEffect(() => {
-    setTab(initialTab ?? 'overview');
+    setTab(normalizeTab(initialTab));
   }, [initialTab]);
 
   const { data, isLoading, error, refetch } = useQuery({

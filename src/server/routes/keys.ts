@@ -1,6 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { keyExport, keyImport, keyPath } from '../../commands/key.js';
 
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 export async function keyRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/deployments/:name/keys/path
   app.get<{ Params: { name: string } }>(
@@ -10,7 +15,12 @@ export async function keyRoutes(app: FastifyInstance): Promise<void> {
         const path = await keyPath({ name: request.params.name });
         return { name: request.params.name, path };
       } catch (err) {
-        reply.code(404).send({ error: (err as Error).message });
+        const msg = errorMessage(err);
+        if (msg.includes('no age key for deployment')) {
+          reply.code(404).send({ error: msg });
+        } else {
+          reply.code(500).send({ error: msg });
+        }
       }
     },
   );
@@ -23,7 +33,12 @@ export async function keyRoutes(app: FastifyInstance): Promise<void> {
         const content = await keyExport({ name: request.params.name });
         reply.type('text/plain').send(content);
       } catch (err) {
-        reply.code(404).send({ error: (err as Error).message });
+        const msg = errorMessage(err);
+        if (msg.includes('no age key for deployment')) {
+          reply.code(404).send({ error: msg });
+        } else {
+          reply.code(500).send({ error: msg });
+        }
       }
     },
   );
@@ -33,15 +48,15 @@ export async function keyRoutes(app: FastifyInstance): Promise<void> {
     '/api/deployments/:name/keys/import',
     async (request, reply) => {
       const { path } = request.body ?? {};
-      if (!path) {
+      if (!path?.trim()) {
         reply.code(400).send({ error: 'path is required' });
         return;
       }
       try {
-        const destPath = await keyImport({ name: request.params.name, path });
+        const destPath = await keyImport({ name: request.params.name, path: path.trim() });
         return { name: request.params.name, path: destPath };
       } catch (err) {
-        const msg = (err as Error).message;
+        const msg = errorMessage(err);
         if (msg.includes('already exists')) {
           reply.code(409).send({ error: msg });
         } else if (msg.includes('does not exist')) {

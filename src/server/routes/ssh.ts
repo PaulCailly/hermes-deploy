@@ -92,12 +92,15 @@ export async function sshRoutes(app: FastifyInstance): Promise<void> {
           const str = buf.toString();
           try {
             const msg = JSON.parse(str);
-            if (msg.type === 'resize' && typeof msg.cols === 'number' && typeof msg.rows === 'number') {
-              shellHandle.resize(msg.cols, msg.rows);
-              return;
+            if (msg.type === 'resize') {
+              // Validate cols/rows as positive integers; ignore malformed resize frames
+              if (Number.isInteger(msg.cols) && Number.isInteger(msg.rows) && msg.cols > 0 && msg.rows > 0) {
+                shellHandle.resize(msg.cols, msg.rows);
+              }
+              return; // Always consume resize frames — never forward JSON to shell
             }
           } catch {
-            // Not JSON — treat as terminal input
+            // Not JSON — treat as terminal input below
           }
           shellHandle.write(str);
         } else {
