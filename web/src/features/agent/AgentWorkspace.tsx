@@ -2,6 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/api';
 import { AgentHeader } from './AgentHeader';
 import { AgentTabBar } from './AgentTabBar';
+import { OverviewTab } from './OverviewTab';
+import { SessionsTab } from './SessionsTab';
+import { AnalyticsTab } from './AnalyticsTab';
+import { SkillsTab } from './SkillsTab';
+import { CronTab } from './CronTab';
+import { GatewayTab } from './GatewayTab';
 import { InfraTab } from './InfraTab';
 import { ConfigTab } from '../config/ConfigTab';
 import { LogsTab } from '../logs/LogsTab';
@@ -14,17 +20,6 @@ interface AgentWorkspaceProps {
   name: string;
   tab: AgentTab;
   navigate: Navigate;
-}
-
-function PlaceholderTab({ label }: { label: string }) {
-  return (
-    <div className="flex items-center justify-center h-96 text-slate-500">
-      <div className="text-center">
-        <i className="fa-solid fa-hammer text-3xl mb-3 block text-slate-600" />
-        <p className="text-sm">{label} — coming soon</p>
-      </div>
-    </div>
-  );
 }
 
 export function AgentWorkspace({ name, tab, navigate }: AgentWorkspaceProps) {
@@ -40,18 +35,18 @@ export function AgentWorkspace({ name, tab, navigate }: AgentWorkspaceProps) {
 
   function renderTab() {
     switch (tab) {
-      case 'overview':  return <PlaceholderTab label="Overview" />;
-      case 'sessions':  return <PlaceholderTab label="Sessions" />;
-      case 'analytics': return <PlaceholderTab label="Analytics" />;
-      case 'skills':    return <PlaceholderTab label="Skills" />;
-      case 'cron':      return <PlaceholderTab label="Cron" />;
-      case 'gateway':   return <PlaceholderTab label="Gateway" />;
+      case 'overview':  return <OverviewTab name={name} status={status} navigate={navigate} />;
+      case 'sessions':  return <SessionsTab name={name} />;
+      case 'analytics': return <AnalyticsTab />;
+      case 'skills':    return <SkillsTab />;
+      case 'cron':      return <CronTab />;
+      case 'gateway':   return <GatewayTab />;
       case 'infra':     return <InfraTab name={name} status={status} navigate={navigate} />;
       case 'config':    return <ConfigTab name={name} />;
       case 'logs':      return <LogsTab name={name} />;
       case 'ssh':       return <SshTab name={name} />;
       case 'secrets':   return <SecretsTab name={name} />;
-      default:          return <PlaceholderTab label={tab} />;
+      default:          return null;
     }
   }
 
