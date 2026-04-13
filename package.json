@@ -49,7 +49,7 @@
   "scripts": {
     "build": "tsup && npm run build:web && npm run build:copy-web",
     "build:server": "tsup",
-    "build:web": "cd web && npm install && npm run build",
+    "build:web": "cd web && npm ci && npm run build",
     "build:copy-web": "node scripts/copy-web-dist.mjs",
     "dev": "tsup --watch",
     "dev:dashboard": "node dist/cli.js dashboard --port 4173 --no-open",

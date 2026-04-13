@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/api';
 
@@ -29,6 +29,7 @@ export function ConfigTab({ name }: Props) {
   const [activeFile, setActiveFile] = useState<string>('hermes-toml');
   const [editorContent, setEditorContent] = useState<string>('');
   const [dirty, setDirty] = useState(false);
+  const lastLoadedFile = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
   const filesQuery = useQuery({
@@ -38,14 +39,18 @@ export function ConfigTab({ name }: Props) {
 
   const contentQuery = useQuery({
     queryKey: ['config-content', name, activeFile],
-    queryFn: async () => {
-      const data = await apiFetch<ConfigContent>(`/api/deployments/${encodeURIComponent(name)}/config/${activeFile}`);
-      setEditorContent(data.content);
-      setDirty(false);
-      return data;
-    },
+    queryFn: () => apiFetch<ConfigContent>(`/api/deployments/${encodeURIComponent(name)}/config/${activeFile}`),
     enabled: !!activeFile,
   });
+
+  // Sync editor content only when switching files, not on background refetches
+  useEffect(() => {
+    if (contentQuery.data && lastLoadedFile.current !== activeFile) {
+      setEditorContent(contentQuery.data.content);
+      setDirty(false);
+      lastLoadedFile.current = activeFile;
+    }
+  }, [contentQuery.data, activeFile]);
 
   const saveMutation = useMutation({
     mutationFn: async (content: string) => {
@@ -56,6 +61,7 @@ export function ConfigTab({ name }: Props) {
     },
     onSuccess: () => {
       setDirty(false);
+      lastLoadedFile.current = null; // Allow next fetch to update editor
       queryClient.invalidateQueries({ queryKey: ['config-content', name, activeFile] });
     },
   });
@@ -69,7 +75,7 @@ export function ConfigTab({ name }: Props) {
           {filesQuery.data?.files.map((f) => (
             <button
               key={f.key}
-              onClick={() => { setActiveFile(f.key); setDirty(false); }}
+              onClick={() => { setActiveFile(f.key); lastLoadedFile.current = null; setDirty(false); }}
               disabled={!f.exists}
               className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                 activeFile === f.key
@@ -140,13 +146,15 @@ export function ConfigTab({ name }: Props) {
 function useMonacoEditor() {
   const [Editor, setEditor] = useState<any>(null);
 
-  if (!Editor) {
+  useEffect(() => {
+    let mounted = true;
     import('@monaco-editor/react').then((mod) => {
-      setEditor(() => mod.default);
+      if (mounted) setEditor(() => mod.default);
     }).catch(() => {
       // Monaco failed to load — fallback to textarea
     });
-  }
+    return () => { mounted = false; };
+  }, []);
 
   return Editor;
 }

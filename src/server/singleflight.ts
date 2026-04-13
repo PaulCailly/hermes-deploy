@@ -15,7 +15,10 @@ export class SingleFlight {
     return true;
   }
 
-  release(key: string): void {
-    this.inflight.delete(key);
+  release(key: string, jobId: string): void {
+    // Only release if the caller owns the lock
+    if (this.inflight.get(key) === jobId) {
+      this.inflight.delete(key);
+    }
   }
 }

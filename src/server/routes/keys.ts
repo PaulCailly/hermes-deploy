@@ -41,7 +41,14 @@ export async function keyRoutes(app: FastifyInstance): Promise<void> {
         const destPath = await keyImport({ name: request.params.name, path });
         return { name: request.params.name, path: destPath };
       } catch (err) {
-        reply.code(500).send({ error: (err as Error).message });
+        const msg = (err as Error).message;
+        if (msg.includes('already exists')) {
+          reply.code(409).send({ error: msg });
+        } else if (msg.includes('does not exist')) {
+          reply.code(404).send({ error: msg });
+        } else {
+          reply.code(500).send({ error: msg });
+        }
       }
     },
   );

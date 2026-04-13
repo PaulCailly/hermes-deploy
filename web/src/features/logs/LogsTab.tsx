@@ -9,19 +9,26 @@ export function LogsTab({ name }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [paused, setPaused] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const activeWsRef = useRef<WebSocket | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const ws = createWs(`/ws/logs/${encodeURIComponent(name)}`);
-    wsRef.current = ws;
+    activeWsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
+    ws.onopen = () => {
+      if (activeWsRef.current === ws) setConnected(true);
+    };
+    ws.onclose = () => {
+      if (activeWsRef.current === ws) setConnected(false);
+    };
+    ws.onerror = () => {
+      if (activeWsRef.current === ws) setConnected(false);
+    };
 
     ws.onmessage = (ev) => {
+      if (activeWsRef.current !== ws) return;
       try {
         const msg = JSON.parse(ev.data as string);
         if (msg.line !== undefined) {
@@ -35,8 +42,8 @@ export function LogsTab({ name }: Props) {
     };
 
     return () => {
+      activeWsRef.current = null;
       ws.close();
-      wsRef.current = null;
     };
   }, [name]);
 

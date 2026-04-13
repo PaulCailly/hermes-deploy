@@ -42,20 +42,19 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
       return;
     }
 
-    const provider = createCloudProvider({
-      provider: deployment.cloud,
-      region: deployment.region,
-      profile: deployment.cloud === 'gcp' ? (deployment.cloud_resources as any).project_id : undefined,
-      zone: deployment.cloud === 'gcp' ? (deployment.cloud_resources as any).zone : undefined,
-      imageCacheFile: paths.imageCacheFile,
-    });
-
     const ledger = deployment.cloud === 'aws'
       ? { kind: 'aws' as const, resources: deployment.cloud_resources }
       : { kind: 'gcp' as const, resources: deployment.cloud_resources };
 
     let live;
     try {
+      const provider = createCloudProvider({
+        provider: deployment.cloud,
+        region: deployment.region,
+        profile: deployment.cloud === 'gcp' ? (deployment.cloud_resources as any).project_id : undefined,
+        zone: deployment.cloud === 'gcp' ? (deployment.cloud_resources as any).zone : undefined,
+        imageCacheFile: paths.imageCacheFile,
+      });
       live = await provider.status(ledger);
     } catch {
       live = { state: 'unknown' as const, publicIp: null };
@@ -84,7 +83,7 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
     '/api/deployments/:name/up',
     async (request, reply) => {
       const { name } = request.params;
-      const { projectPath } = request.body;
+      const { projectPath } = request.body ?? {};
 
       if (!projectPath) {
         reply.code(400).send({ error: 'projectPath is required' });
@@ -97,17 +96,14 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         return;
       }
 
-      const { jobId, reporter } = bus.createJob(name, 'up');
-      singleFlight.acquire(name, jobId);
-
+      // Do all setup BEFORE acquiring the lock
       const paths = getStatePaths();
       const store = new StateStore(paths);
       const state = await store.read();
       const existing = state.deployments[name];
-      const cloud = existing?.cloud ?? 'aws'; // fallback, config will override
+      const cloud = existing?.cloud ?? 'aws';
       const region = existing?.region ?? 'us-east-1';
 
-      // Load hermes.toml from project to get actual cloud config
       let actualCloud = cloud;
       let actualRegion = region;
       let providerOpts: Record<string, any> = {};
@@ -130,6 +126,13 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         ...providerOpts,
       });
 
+      // Acquire lock just before the async operation
+      const { jobId, reporter } = bus.createJob(name, 'up');
+      if (!singleFlight.acquire(name, jobId)) {
+        reply.code(409).send({ error: 'busy', currentJobId: singleFlight.isRunning(name) });
+        return;
+      }
+
       // Fire and forget — client subscribes via WS /ws/jobs/:jobId
       runDeploy({
         projectDir: projectPath,
@@ -142,8 +145,8 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         waitSsh: (host) => waitForSshPort({ host }),
         reporter,
       }).then(
-        () => { bus.finish(jobId); singleFlight.release(name); },
-        (err) => { bus.fail(jobId, (err as Error).message); singleFlight.release(name); },
+        () => { bus.finish(jobId); singleFlight.release(name, jobId); },
+        (err) => { bus.fail(jobId, (err as Error).message); singleFlight.release(name, jobId); },
       );
 
       reply.code(202).send({ jobId });
@@ -162,6 +165,7 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         return;
       }
 
+      // Setup before acquiring lock
       const paths = getStatePaths();
       const store = new StateStore(paths);
       const state = await store.read();
@@ -171,9 +175,6 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         return;
       }
 
-      const { jobId, reporter } = bus.createJob(name, 'update');
-      singleFlight.acquire(name, jobId);
-
       const provider = createCloudProvider({
         provider: deployment.cloud,
         region: deployment.region,
@@ -182,15 +183,22 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         imageCacheFile: paths.imageCacheFile,
       });
 
+      // Acquire lock just before async operation
+      const { jobId, reporter } = bus.createJob(name, 'update');
+      if (!singleFlight.acquire(name, jobId)) {
+        reply.code(409).send({ error: 'busy', currentJobId: singleFlight.isRunning(name) });
+        return;
+      }
+
       runUpdate({
         deploymentName: name,
         provider,
         sessionFactory: (host, privateKey) => createSshSession({ host, username: 'root', privateKey }),
-        detectPublicIp,
+        detectPublicIp: () => detectPublicIp(),
         reporter,
       }).then(
-        () => { bus.finish(jobId); singleFlight.release(name); },
-        (err) => { bus.fail(jobId, (err as Error).message); singleFlight.release(name); },
+        () => { bus.finish(jobId); singleFlight.release(name, jobId); },
+        (err) => { bus.fail(jobId, (err as Error).message); singleFlight.release(name, jobId); },
       );
 
       reply.code(202).send({ jobId });
@@ -215,6 +223,7 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         return;
       }
 
+      // Setup before acquiring lock
       const paths = getStatePaths();
       const store = new StateStore(paths);
       const state = await store.read();
@@ -224,9 +233,6 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         return;
       }
 
-      const { jobId, reporter } = bus.createJob(name, 'destroy');
-      singleFlight.acquire(name, jobId);
-
       const provider = createCloudProvider({
         provider: deployment.cloud,
         region: deployment.region,
@@ -235,13 +241,20 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         imageCacheFile: paths.imageCacheFile,
       });
 
+      // Acquire lock just before async operation
+      const { jobId, reporter } = bus.createJob(name, 'destroy');
+      if (!singleFlight.acquire(name, jobId)) {
+        reply.code(409).send({ error: 'busy', currentJobId: singleFlight.isRunning(name) });
+        return;
+      }
+
       runDestroy({
         deploymentName: name,
         provider,
         reporter,
       }).then(
-        () => { bus.finish(jobId); singleFlight.release(name); },
-        (err) => { bus.fail(jobId, (err as Error).message); singleFlight.release(name); },
+        () => { bus.finish(jobId); singleFlight.release(name, jobId); },
+        (err) => { bus.fail(jobId, (err as Error).message); singleFlight.release(name, jobId); },
       );
 
       reply.code(202).send({ jobId });
@@ -260,6 +273,18 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         return;
       }
 
+      const existingJob = singleFlight.isRunning(name);
+      if (existingJob) {
+        reply.code(409).send({ error: 'busy', currentJobId: existingJob });
+        return;
+      }
+
+      const { jobId } = bus.createJob(name, 'adopt');
+      if (!singleFlight.acquire(name, jobId)) {
+        reply.code(409).send({ error: 'busy', currentJobId: singleFlight.isRunning(name) });
+        return;
+      }
+
       try {
         const result = await adoptDeployment({
           name,
@@ -267,9 +292,13 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
           force,
           dryRun,
         });
+        bus.finish(jobId);
         return result;
       } catch (err) {
+        bus.fail(jobId, (err as Error).message);
         reply.code(500).send({ error: (err as Error).message });
+      } finally {
+        singleFlight.release(name, jobId);
       }
     },
   );

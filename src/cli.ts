@@ -305,7 +305,13 @@ program
   .command('dashboard')
   .description('Start the local web dashboard')
   .option('--host <host>', 'bind address', '127.0.0.1')
-  .option('--port <port>', 'TCP port (0 = random available)', (v) => Number(v), 0)
+  .option('--port <port>', 'TCP port (0 = random available)', (v: string) => {
+    const n = Number.parseInt(v, 10);
+    if (!Number.isInteger(n) || n < 0 || n > 65535) {
+      throw new Error(`invalid port "${v}" — must be an integer between 0 and 65535`);
+    }
+    return n;
+  }, 0)
   .option('--no-open', 'do not open a browser window')
   .option('--no-auth', 'disable token auth (dangerous)')
   .action(async (opts) => {

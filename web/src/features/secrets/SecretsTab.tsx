@@ -85,6 +85,18 @@ export function SecretsTab({ name }: Props) {
 
       {secretsQuery.isLoading && <div className="text-gray-400 text-center py-8">Loading...</div>}
 
+      {secretsQuery.isError && (
+        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-red-400 text-sm flex items-center justify-between">
+          <span>Failed to load secrets: {(secretsQuery.error as Error).message}</span>
+          <button
+            onClick={() => secretsQuery.refetch()}
+            className="text-xs text-red-300 hover:text-white transition-colors underline ml-4"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {secretsQuery.data && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           {secretsQuery.data.keys.length === 0 ? (

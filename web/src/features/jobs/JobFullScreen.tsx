@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function JobFullScreen({ jobId, onBack }: Props) {
-  const { events, logs, isDone } = useJobStream(jobId);
+  const { events, logs, isDone, isError } = useJobStream(jobId);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,7 +23,8 @@ export function JobFullScreen({ jobId, onBack }: Props) {
         </button>
         <h1 className="text-2xl font-bold">Job {jobId.slice(0, 8)}</h1>
         {!isDone && <span className="text-sm text-indigo-400 animate-pulse">Running...</span>}
-        {isDone && <span className="text-sm text-emerald-400">Complete</span>}
+        {isDone && !isError && <span className="text-sm text-emerald-400">Complete</span>}
+        {isDone && isError && <span className="text-sm text-red-400">Failed</span>}
       </div>
 
       <div className="mb-6">

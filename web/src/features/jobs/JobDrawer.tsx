@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function JobDrawer({ jobId, onClose, onFullScreen }: Props) {
-  const { events, logs, isDone } = useJobStream(jobId);
+  const { events, logs, isDone, isError } = useJobStream(jobId);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -22,7 +22,8 @@ export function JobDrawer({ jobId, onClose, onFullScreen }: Props) {
         <div className="flex items-center gap-3">
           <h3 className="font-semibold text-white text-sm">Job {jobId.slice(0, 8)}</h3>
           {!isDone && <span className="text-xs text-indigo-400 animate-pulse">Running...</span>}
-          {isDone && <span className="text-xs text-emerald-400">Complete</span>}
+          {isDone && !isError && <span className="text-xs text-emerald-400">Complete</span>}
+          {isDone && isError && <span className="text-xs text-red-400">Failed</span>}
         </div>
         <div className="flex gap-2">
           <button onClick={onFullScreen} className="text-xs text-gray-400 hover:text-white transition-colors">

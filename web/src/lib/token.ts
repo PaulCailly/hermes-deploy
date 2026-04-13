@@ -2,7 +2,7 @@ const TOKEN_KEY = 'hermes-deploy-token';
 
 export function initToken(): void {
   const hash = window.location.hash;
-  const match = hash.match(/^#token=([a-f0-9]+)/);
+  const match = hash.match(/^#token=([a-f0-9]+)/i);
   if (match?.[1]) {
     sessionStorage.setItem(TOKEN_KEY, match[1]);
     // Strip token from URL to keep it out of history

@@ -13,15 +13,7 @@ export async function initRoutes(app: FastifyInstance): Promise<void> {
       }
 
       try {
-        // initCommand uses process.cwd() by default — we override by
-        // changing to the target dir temporarily.
-        const originalCwd = process.cwd();
-        try {
-          process.chdir(dir);
-          await initCommand({ name });
-        } finally {
-          process.chdir(originalCwd);
-        }
+        await initCommand({ name, dir });
         return { ok: true, dir, name };
       } catch (err) {
         reply.code(500).send({ error: (err as Error).message });

@@ -6,15 +6,30 @@ interface Props {
   onCreated: (name: string) => void;
 }
 
+function extractDirName(dir: string): string {
+  // Normalize trailing slashes and extract last segment
+  const trimmed = dir.replace(/\/+$/, '');
+  return trimmed.split('/').pop() || 'my-agent';
+}
+
 export function NewDeploymentWizard({ onBack, onCreated }: Props) {
   const [dir, setDir] = useState('');
   const [name, setName] = useState('');
+  const [dirError, setDirError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  const validateDir = (value: string) => {
+    if (value && !value.startsWith('/')) {
+      setDirError('Path must be absolute (start with /)');
+    } else {
+      setDirError(null);
+    }
+  };
+
   const handleInit = async () => {
-    if (!dir) return;
+    if (!dir || dirError) return;
     setLoading(true);
     setError(null);
 
@@ -32,6 +47,7 @@ export function NewDeploymentWizard({ onBack, onCreated }: Props) {
   };
 
   if (success) {
+    const derivedName = name || extractDirName(dir);
     return (
       <div className="max-w-lg mx-auto">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
@@ -44,7 +60,7 @@ export function NewDeploymentWizard({ onBack, onCreated }: Props) {
           </p>
           <div className="flex gap-3 justify-center">
             <button
-              onClick={() => onCreated(name || dir.split('/').pop() || 'my-agent')}
+              onClick={() => onCreated(derivedName)}
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors"
             >
               Go to deployment
@@ -77,11 +93,17 @@ export function NewDeploymentWizard({ onBack, onCreated }: Props) {
           </label>
           <input
             value={dir}
-            onChange={(e) => setDir(e.target.value)}
+            onChange={(e) => { setDir(e.target.value); validateDir(e.target.value); }}
+            onBlur={() => validateDir(dir)}
             placeholder="/home/user/my-agent"
-            className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
+            className={`w-full bg-gray-950 border rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none ${
+              dirError ? 'border-red-500 focus:border-red-500' : 'border-gray-700 focus:border-indigo-500'
+            }`}
           />
-          <p className="text-xs text-gray-500 mt-1">Absolute path to the directory where hermes.toml will be created</p>
+          {dirError
+            ? <p className="text-xs text-red-400 mt-1">{dirError}</p>
+            : <p className="text-xs text-gray-500 mt-1">Absolute path to the directory where hermes.toml will be created</p>
+          }
         </div>
 
         <div>
@@ -105,7 +127,7 @@ export function NewDeploymentWizard({ onBack, onCreated }: Props) {
 
         <button
           onClick={handleInit}
-          disabled={!dir || loading}
+          disabled={!dir || !!dirError || loading}
           className="w-full px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium transition-colors"
         >
           {loading ? 'Initializing...' : 'Initialize project'}

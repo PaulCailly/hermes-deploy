@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/api';
 import { OverviewTab } from './OverviewTab';
@@ -27,6 +27,10 @@ const TABS = [
 
 export function DeploymentDetail({ name, initialTab, onBack, onJob }: Props) {
   const [tab, setTab] = useState(initialTab ?? 'overview');
+
+  useEffect(() => {
+    setTab(initialTab ?? 'overview');
+  }, [initialTab]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['deployment', name],

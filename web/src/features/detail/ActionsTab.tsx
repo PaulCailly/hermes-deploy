@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { apiFetch } from '../../lib/api';
 import { JobDrawer } from '../jobs/JobDrawer';
 
@@ -12,6 +12,13 @@ export function ActionsTab({ name, onJob, onRefresh }: Props) {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDestroy, setConfirmDestroy] = useState(false);
+  const destroyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (destroyTimerRef.current) clearTimeout(destroyTimerRef.current);
+    };
+  }, []);
 
   const runAction = async (action: 'update' | 'destroy') => {
     setError(null);
@@ -52,10 +59,18 @@ export function ActionsTab({ name, onJob, onRefresh }: Props) {
           onClick={() => {
             if (!confirmDestroy) {
               setConfirmDestroy(true);
-              setTimeout(() => setConfirmDestroy(false), 5000);
+              if (destroyTimerRef.current) clearTimeout(destroyTimerRef.current);
+              destroyTimerRef.current = setTimeout(() => {
+                setConfirmDestroy(false);
+                destroyTimerRef.current = null;
+              }, 5000);
               return;
             }
             setConfirmDestroy(false);
+            if (destroyTimerRef.current) {
+              clearTimeout(destroyTimerRef.current);
+              destroyTimerRef.current = null;
+            }
             runAction('destroy');
           }}
         />

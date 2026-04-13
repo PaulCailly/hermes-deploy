@@ -19,6 +19,7 @@ interface Job {
 
 export class ReporterBus {
   private jobs = new Map<string, Job>();
+  private cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   createJob(
     deploymentName: string,
@@ -118,7 +119,8 @@ export class ReporterBus {
   }
 
   private scheduleCleanup(jobId: string): void {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      this.cleanupTimers.delete(jobId);
       const job = this.jobs.get(jobId);
       if (job && job.status !== 'running') {
         for (const ws of job.subscribers) {
@@ -127,5 +129,7 @@ export class ReporterBus {
         this.jobs.delete(jobId);
       }
     }, JOB_TTL_MS);
+    timer.unref();
+    this.cleanupTimers.set(jobId, timer);
   }
 }

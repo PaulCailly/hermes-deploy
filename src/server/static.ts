@@ -16,9 +16,19 @@ export async function registerStatic(app: FastifyInstance, webDistDir: string): 
     wildcard: false,
   });
 
+  // Preload index.html once at startup to avoid blocking reads per request.
+  const indexHtmlPath = join(webDistDir, 'index.html');
+  let cachedIndexHtml: string | null = null;
+  try {
+    if (existsSync(indexHtmlPath)) {
+      cachedIndexHtml = readFileSync(indexHtmlPath, 'utf-8');
+    }
+  } catch {
+    // Failed to read — SPA fallback will return an error message.
+  }
+
   // SPA fallback: serve index.html for any non-API, non-WS route
   // that doesn't match a static file.
-  const indexHtml = join(webDistDir, 'index.html');
   app.setNotFoundHandler((request, reply) => {
     if (
       request.url.startsWith('/api/') ||
@@ -28,9 +38,8 @@ export async function registerStatic(app: FastifyInstance, webDistDir: string): 
       reply.code(404).send({ error: 'not found' });
       return;
     }
-    if (existsSync(indexHtml)) {
-      const html = readFileSync(indexHtml, 'utf-8');
-      reply.type('text/html').send(html);
+    if (cachedIndexHtml) {
+      reply.type('text/html').send(cachedIndexHtml);
     } else {
       reply.code(404).send({ error: 'dashboard not built — run npm run build:web' });
     }

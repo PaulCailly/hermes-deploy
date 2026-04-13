@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { StateStore } from '../../state/store.js';
 import { getStatePaths } from '../../state/paths.js';
 import { createSshSession } from '../../remote-ops/session.js';
+import type { SshSession } from '../../remote-ops/session.js';
 
 export async function sshRoutes(app: FastifyInstance): Promise<void> {
   // WS /ws/ssh/:name — interactive PTY shell
@@ -20,7 +21,7 @@ export async function sshRoutes(app: FastifyInstance): Promise<void> {
         return;
       }
 
-      let session;
+      let session: SshSession;
       try {
         const privateKey = readFileSync(deployment.ssh_key_path, 'utf-8');
         session = await createSshSession({
@@ -51,6 +52,14 @@ export async function sshRoutes(app: FastifyInstance): Promise<void> {
         return;
       }
 
+      // Guard against multiple dispose calls
+      let disposed = false;
+      const safeDispose = () => {
+        if (disposed) return;
+        disposed = true;
+        session.dispose().catch(() => {});
+      };
+
       // Pipe shell stdout → WS (binary frames)
       shellHandle.onData((data) => {
         try {
@@ -62,14 +71,25 @@ export async function sshRoutes(app: FastifyInstance): Promise<void> {
 
       shellHandle.onClose(() => {
         try { socket.close(); } catch { /* */ }
-        session?.dispose().catch(() => {});
+        safeDispose();
       });
 
       // WS → shell stdin
       socket.on('message', (data: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {
+        // Normalize incoming data to Buffer
+        let buf: Buffer;
+        if (Buffer.isBuffer(data)) {
+          buf = data;
+        } else if (data instanceof ArrayBuffer) {
+          buf = Buffer.from(data);
+        } else if (Array.isArray(data)) {
+          buf = Buffer.concat(data);
+        } else {
+          buf = Buffer.from(data as any);
+        }
+
         if (!isBinary) {
-          // Could be a control frame (JSON)
-          const str = data.toString();
+          const str = buf.toString();
           try {
             const msg = JSON.parse(str);
             if (msg.type === 'resize' && typeof msg.cols === 'number' && typeof msg.rows === 'number') {
@@ -81,18 +101,18 @@ export async function sshRoutes(app: FastifyInstance): Promise<void> {
           }
           shellHandle.write(str);
         } else {
-          shellHandle.write(data as Buffer);
+          shellHandle.write(buf);
         }
       });
 
       socket.on('close', () => {
         shellHandle.close();
-        session?.dispose().catch(() => {});
+        safeDispose();
       });
 
       socket.on('error', () => {
         shellHandle.close();
-        session?.dispose().catch(() => {});
+        safeDispose();
       });
     },
   );

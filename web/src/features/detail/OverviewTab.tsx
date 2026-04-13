@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { StatusPayloadDto } from '@hermes/dto';
 
 interface Props {
@@ -64,7 +65,7 @@ export function OverviewTab({ status }: Props) {
   );
 }
 
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between items-center">
       <dt className="text-gray-400 text-sm">{label}</dt>

@@ -71,7 +71,7 @@ export async function configRoutes(app: FastifyInstance): Promise<void> {
         return;
       }
 
-      // Validate hermes.toml if that's what we're saving
+      // Validate hermes.toml before writing
       if (request.params.file === 'hermes-toml') {
         try {
           const { parse } = await import('smol-toml');
@@ -80,6 +80,17 @@ export async function configRoutes(app: FastifyInstance): Promise<void> {
           HermesTomlSchema.parse(parsed);
         } catch (err) {
           reply.code(422).send({ error: `invalid hermes.toml: ${(err as Error).message}` });
+          return;
+        }
+      }
+
+      // Validate YAML syntax before writing
+      if (request.params.file === 'config-yaml') {
+        try {
+          const { parse } = await import('yaml');
+          parse(content);
+        } catch (err) {
+          reply.code(422).send({ error: `invalid config.yaml: ${(err as Error).message}` });
           return;
         }
       }

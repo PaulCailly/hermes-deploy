@@ -5,17 +5,30 @@ export function generateToken(): string {
   return randomBytes(32).toString('hex');
 }
 
-const ALLOWED_HOST_PATTERNS = [
-  /^127\.0\.0\.1(:\d+)?$/,
-  /^localhost(:\d+)?$/,
-  /^\[::1\](:\d+)?$/,
-];
+function buildHostPatterns(bindHost: string): RegExp[] {
+  const loopback = [
+    /^127\.0\.0\.1(:\d+)?$/,
+    /^localhost(:\d+)?$/,
+    /^\[::1\](:\d+)?$/,
+  ];
 
-export function createAuthHook(token: string, authEnabled: boolean) {
+  // 0.0.0.0 means "all interfaces" — allow any Host header
+  if (bindHost === '0.0.0.0' || bindHost === '::') {
+    return [/.*/];
+  }
+
+  // Always include loopback patterns for safety
+  const escaped = bindHost.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return [...loopback, new RegExp(`^${escaped}(:\\d+)?$`)];
+}
+
+export function createAuthHook(token: string, authEnabled: boolean, bindHost: string) {
+  const allowedPatterns = buildHostPatterns(bindHost);
+
   return async (request: FastifyRequest, reply: FastifyReply) => {
     // DNS rebinding protection: always check Host header
     const host = request.headers.host ?? '';
-    if (!ALLOWED_HOST_PATTERNS.some(p => p.test(host))) {
+    if (!allowedPatterns.some(p => p.test(host))) {
       reply.code(400).send({ error: 'invalid host header' });
       return;
     }

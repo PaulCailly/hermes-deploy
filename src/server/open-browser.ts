@@ -18,5 +18,9 @@ export function openBrowser(url: string): void {
   }
 
   const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+  child.on('error', () => {
+    // Browser opener binary missing — silently ignore; the URL
+    // is printed to the console so the user can open it manually.
+  });
   child.unref();
 }

@@ -12,8 +12,14 @@ export async function secretRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { name: string } }>(
     '/api/deployments/:name/secrets',
     async (request, reply) => {
+      let projectPath: string;
       try {
-        const projectPath = await resolveProjectPath(request.params.name);
+        projectPath = await resolveProjectPath(request.params.name);
+      } catch (err) {
+        reply.code(404).send({ error: (err as Error).message });
+        return;
+      }
+      try {
         const keys = await secretList({ name: request.params.name, projectPath });
         return { keys };
       } catch (err) {

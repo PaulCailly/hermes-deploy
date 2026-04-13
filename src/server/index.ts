@@ -35,7 +35,7 @@ export async function createDashboardServer(opts: CreateServerOptions): Promise<
   await app.register(websocket);
 
   // Auth + DNS rebinding protection
-  app.addHook('onRequest', createAuthHook(token, opts.auth));
+  app.addHook('onRequest', createAuthHook(token, opts.auth, opts.host));
 
   // Shared state
   const bus = new ReporterBus();
