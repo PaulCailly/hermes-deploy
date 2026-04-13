@@ -47,8 +47,12 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && npm run build:web && npm run build:copy-web",
+    "build:server": "tsup",
+    "build:web": "cd web && npm ci && npm run build",
+    "build:copy-web": "node scripts/copy-web-dist.mjs",
     "dev": "tsup --watch",
+    "dev:dashboard": "node dist/cli.js dashboard --port 4173 --no-open",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
@@ -61,8 +65,11 @@
   },
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.600.0",
+    "@fastify/static": "^9.1.0",
+    "@fastify/websocket": "^11.2.0",
     "@google-cloud/compute": "^6.9.0",
     "commander": "^12.1.0",
+    "fastify": "^5.8.4",
     "ink": "^7.0.0",
     "ink-spinner": "^5.0.0",
     "proper-lockfile": "^4.1.2",
@@ -77,6 +84,7 @@
     "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^19.2.14",
     "@types/ssh2": "^1.15.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "aws-sdk-client-mock": "^4.0.0",
