@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from './lib/api';
 import { AppShell } from './components/layout/AppShell';
+import { OrgDashboard } from './features/dashboard/OrgDashboard';
 import { AgentList } from './features/agents/AgentList';
 import { AgentWorkspace } from './features/agent/AgentWorkspace';
 import { NewDeploymentWizard } from './features/wizard/NewDeploymentWizard';
@@ -23,8 +24,7 @@ export function App() {
   function renderPage() {
     switch (route.page) {
       case 'dashboard':
-        // Will be replaced by OrgDashboard in Plan 3
-        return <AgentList agents={agents} navigate={navigate} />;
+        return <OrgDashboard agents={agents} navigate={navigate} />;
 
       case 'agents':
         return <AgentList agents={agents} navigate={navigate} />;
