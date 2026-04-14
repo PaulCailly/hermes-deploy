@@ -133,9 +133,9 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
         COALESCE(SUM(cache_write_tokens), 0) AS total_cache_write_tokens,
         COALESCE(SUM(reasoning_tokens), 0) AS total_reasoning_tokens,
         COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) AS total_cost_usd,
-        SUM(CASE WHEN date(started_at) = date('now') THEN 1 ELSE 0 END) AS today_sessions,
-        COALESCE(SUM(CASE WHEN date(started_at) = date('now') THEN message_count ELSE 0 END), 0) AS today_messages,
-        COALESCE(SUM(CASE WHEN date(started_at) = date('now') THEN COALESCE(actual_cost_usd, estimated_cost_usd, 0) ELSE 0 END), 0) AS today_cost_usd
+        SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN 1 ELSE 0 END) AS today_sessions,
+        COALESCE(SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN message_count ELSE 0 END), 0) AS today_messages,
+        COALESCE(SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN COALESCE(actual_cost_usd, estimated_cost_usd, 0) ELSE 0 END), 0) AS today_cost_usd
       FROM sessions
     `.trim());
 
@@ -227,15 +227,15 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
 
-    const categories = await listRemoteDir(name, '~/.hermes/skills');
+    const categories = await listRemoteDir(name, '/var/lib/hermes/.hermes/skills');
     const result: Array<{ name: string; skills: Array<{ id: string; name: string; category: string; files: string[]; requiredConfig: string[] }> }> = [];
 
     for (const cat of categories) {
-      const skills = await listRemoteDir(name, `~/.hermes/skills/${cat}`);
+      const skills = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${cat}`);
       if (skills.length === 0) continue;
       const catSkills = await Promise.all(skills.map(async (skillName) => {
-        const files = await listRemoteDir(name, `~/.hermes/skills/${cat}/${skillName}`);
-        const yamlBody = await readRemoteFile(name, `~/.hermes/skills/${cat}/${skillName}/skill.yaml`);
+        const files = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${cat}/${skillName}`);
+        const yamlBody = await readRemoteFile(name, `/var/lib/hermes/.hermes/skills/${cat}/${skillName}/skill.yaml`);
         const requiredConfig = extractRequiredConfig(yamlBody ?? '');
         return {
           id: `${cat}/${skillName}`,
@@ -259,7 +259,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       if ([category, skill, file].some((p) => p.includes('..') || p.includes('/'))) {
         return reply.code(400).send({ error: 'invalid path' });
       }
-      const body = await readRemoteFile(name, `~/.hermes/skills/${category}/${skill}/${file}`);
+      const body = await readRemoteFile(name, `/var/lib/hermes/.hermes/skills/${category}/${skill}/${file}`);
       if (body === null) return reply.code(404).send({ error: 'file not found' });
       return reply.type('text/plain').send(body);
     },
@@ -289,7 +289,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       }
 
       try {
-        await writeRemoteFile(name, `~/.hermes/skills/${category}/${skill}/${file}`, content);
+        await writeRemoteFile(name, `/var/lib/hermes/.hermes/skills/${category}/${skill}/${file}`, content);
         return { ok: true };
       } catch (e: unknown) {
         return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
@@ -302,7 +302,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
 
-    const data = await readRemoteJson<unknown>(name, '~/.hermes/cron/jobs.json');
+    const data = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
     if (!Array.isArray(data)) return [];
     return data.map(normalizeCronJob).filter(Boolean);
   });
@@ -318,7 +318,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       gatewayState?: string;
       platforms?: Record<string, { connected?: boolean }>;
       updatedAt?: string;
-    }>(name, '~/.hermes/gateway_state.json');
+    }>(name, '/var/lib/hermes/.hermes/gateway_state.json');
 
     if (!data) {
       return { isRunning: false, platforms: [] };
@@ -492,7 +492,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ---------- PATCH /api/agents/:name/cron/:jobId/toggle ----------
-  // Toggle the `enabled` field on a cron job in ~/.hermes/cron/jobs.json
+  // Toggle the `enabled` field on a cron job in /var/lib/hermes/.hermes/cron/jobs.json
   app.patch<{ Params: { name: string; jobId: string } }>(
     '/api/agents/:name/cron/:jobId/toggle',
     async (req, reply) => {
@@ -502,7 +502,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: 'invalid job id' });
       }
 
-      const data = await readRemoteJson<unknown>(name, '~/.hermes/cron/jobs.json');
+      const data = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
       if (!Array.isArray(data)) {
         return reply.code(404).send({ error: 'jobs.json not found or invalid' });
       }
@@ -515,7 +515,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       job.enabled = !(job.enabled !== false);
 
       try {
-        await writeRemoteFile(name, '~/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
+        await writeRemoteFile(name, '/var/lib/hermes/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
         return { ok: true, enabled: job.enabled };
       } catch (e: unknown) {
         return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
@@ -535,7 +535,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: 'name and prompt required' });
     }
 
-    const existing = await readRemoteJson<unknown>(name, '~/.hermes/cron/jobs.json');
+    const existing = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
     const jobs = Array.isArray(existing) ? (existing as Array<Record<string, unknown>>) : [];
 
     const newId = genCronId();
@@ -554,7 +554,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     jobs.push(newJob);
 
     try {
-      await writeRemoteFile(name, '~/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
+      await writeRemoteFile(name, '/var/lib/hermes/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
       return { ok: true, id: newId };
     } catch (e: unknown) {
       return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
@@ -575,7 +575,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       const body = req.body as Record<string, unknown> | null;
       if (!body) return reply.code(400).send({ error: 'body required' });
 
-      const existing = await readRemoteJson<unknown>(name, '~/.hermes/cron/jobs.json');
+      const existing = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
       if (!Array.isArray(existing)) return reply.code(404).send({ error: 'jobs.json not found' });
 
       const jobs = existing as Array<Record<string, unknown>>;
@@ -593,7 +593,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       if (Array.isArray(body.skills)) job.skills = body.skills;
 
       try {
-        await writeRemoteFile(name, '~/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
+        await writeRemoteFile(name, '/var/lib/hermes/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
         return { ok: true };
       } catch (e: unknown) {
         return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
@@ -611,7 +611,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: 'invalid job id' });
       }
 
-      const existing = await readRemoteJson<unknown>(name, '~/.hermes/cron/jobs.json');
+      const existing = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
       if (!Array.isArray(existing)) return reply.code(404).send({ error: 'jobs.json not found' });
 
       const jobs = existing as Array<Record<string, unknown>>;
@@ -619,7 +619,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       if (filtered.length === jobs.length) return reply.code(404).send({ error: 'job not found' });
 
       try {
-        await writeRemoteFile(name, '~/.hermes/cron/jobs.json', JSON.stringify(filtered, null, 2));
+        await writeRemoteFile(name, '/var/lib/hermes/.hermes/cron/jobs.json', JSON.stringify(filtered, null, 2));
         return { ok: true };
       } catch (e: unknown) {
         return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });

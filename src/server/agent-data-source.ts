@@ -7,7 +7,17 @@ interface CachedSession {
   session: SshSession;
   expiresAt: number;
   createdAt: number;
+  /** Lazily resolved on first sqlite query — null if detection fails. */
+  pythonPath: string | null | undefined;
 }
+
+/**
+ * Hermes on deployed NixOS boxes runs as the `hermes` user with HOME
+ * `/var/lib/hermes`, so its state lives under `/var/lib/hermes/.hermes/`.
+ * When we SSH as root, `~/.hermes/` resolves to `/root/.hermes/` which
+ * does not exist — always use this absolute path instead.
+ */
+export const HERMES_HOME = '/var/lib/hermes/.hermes';
 
 const SESSION_TTL_MS = 30_000;
 const sessionCache = new Map<string, CachedSession>();
@@ -31,13 +41,17 @@ async function resolveAgent(name: string): Promise<{ host: string; privateKey: s
 
 /** Get or create a cached SSH session for an agent. Sessions expire after 30s. */
 export async function getAgentSshSession(name: string): Promise<SshSession> {
+  const entry = await getOrCreateCacheEntry(name);
+  return entry.session;
+}
+
+async function getOrCreateCacheEntry(name: string): Promise<CachedSession> {
   const now = Date.now();
   const cached = sessionCache.get(name);
   if (cached && cached.expiresAt > now) {
-    return cached.session;
+    return cached;
   }
   if (cached) {
-    // Expired — dispose old one
     cached.session.dispose().catch(() => {});
     sessionCache.delete(name);
   }
@@ -49,8 +63,14 @@ export async function getAgentSshSession(name: string): Promise<SshSession> {
     privateKey,
     readyTimeoutMs: 10_000,
   });
-  sessionCache.set(name, { session, expiresAt: now + SESSION_TTL_MS, createdAt: now });
-  return session;
+  const entry: CachedSession = {
+    session,
+    expiresAt: now + SESSION_TTL_MS,
+    createdAt: now,
+    pythonPath: undefined,
+  };
+  sessionCache.set(name, entry);
+  return entry;
 }
 
 /** Dispose the cached session for an agent (e.g. when agent is destroyed). */
@@ -67,17 +87,70 @@ function shEscape(s: string): string {
 }
 
 /**
- * Run a sqlite3 query on the agent's ~/.hermes/state.db and parse the result
- * as JSON. Returns an empty array if the DB is missing, sqlite3 is not
- * installed, or the query errors (e.g. missing table/column).
+ * Resolve a working python3 path on the agent. Tries (in order):
+ *   1. command -v python3 (if on PATH)
+ *   2. find an executable python3 inside a hermes-agent-env nix store path (NixOS deployment)
+ * Returns the path or null if none found. Cached per SSH session.
+ */
+async function resolvePython3(name: string): Promise<string | null> {
+  const entry = await getOrCreateCacheEntry(name);
+  if (entry.pythonPath !== undefined) return entry.pythonPath;
+
+  // Note: python3 under the nix-store hermes-agent-env is a symlink, so we
+  // must NOT restrict find to -type f. We accept any executable entry.
+  const res = await entry.session.exec(
+    `command -v python3 2>/dev/null || ` +
+    `find /nix/store -maxdepth 4 -path '*hermes-agent-env*/bin/python3' 2>/dev/null | head -1 || ` +
+    `find /nix/store -maxdepth 4 -name python3 2>/dev/null | head -1`,
+  );
+  const path = res.stdout.trim();
+  entry.pythonPath = path || null;
+  return entry.pythonPath;
+}
+
+/**
+ * Python script executed on the agent. It reads base64-encoded SQL from a
+ * command-line argument, runs it against the Hermes state.db, and prints
+ * a JSON array to stdout. Timestamps stored as REAL Unix seconds are
+ * converted to ISO 8601 strings (any column ending in `_at` or named
+ * `timestamp`). Integer ids are stringified for consistent frontend types.
+ */
+const QUERY_SCRIPT = String.raw`import sqlite3,sys,json,datetime,base64
+try:
+    sql = base64.b64decode(sys.argv[1]).decode('utf-8')
+    con = sqlite3.connect('${HERMES_HOME}/state.db')
+    con.row_factory = sqlite3.Row
+    cur = con.execute(sql)
+    out = []
+    for row in cur:
+        d = dict(row)
+        for k, v in list(d.items()):
+            if isinstance(v, (int, float)) and (k.endswith('_at') or k == 'timestamp'):
+                try:
+                    d[k] = datetime.datetime.fromtimestamp(v, datetime.timezone.utc).isoformat().replace('+00:00','Z')
+                except Exception:
+                    pass
+            elif isinstance(v, int) and k == 'id':
+                d[k] = str(v)
+        out.append(d)
+    print(json.dumps(out, default=str))
+except Exception:
+    print('[]')
+`;
+
+/**
+ * Run a SQL query on the agent's state.db and parse the result as JSON.
+ * Uses python3 (sqlite3 CLI is not available on NixOS). Returns an empty
+ * array on any failure (missing python, missing DB, missing table, bad SQL).
  */
 export async function runSqliteJson<T>(name: string, sql: string): Promise<T[]> {
   try {
-    const session = await getAgentSshSession(name);
-    // Redirect stderr to /dev/null so missing tables don't pollute stdout.
-    // Fallback to [] if sqlite3 is missing or DB doesn't exist.
-    const cmd = `sqlite3 -json "$HOME/.hermes/state.db" ${shEscape(sql)} 2>/dev/null || echo '[]'`;
-    const res = await session.exec(cmd);
+    const pyPath = await resolvePython3(name);
+    if (!pyPath) return [];
+    const entry = await getOrCreateCacheEntry(name);
+    const sqlB64 = Buffer.from(sql, 'utf-8').toString('base64');
+    const cmd = `${shEscape(pyPath)} -c ${shEscape(QUERY_SCRIPT)} ${shEscape(sqlB64)} 2>/dev/null || echo '[]'`;
+    const res = await entry.session.exec(cmd);
     const out = res.stdout.trim();
     if (!out) return [];
     const parsed = JSON.parse(out);

@@ -45,9 +45,9 @@ const STATS_SQL = `
     COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
     COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
     COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) AS total_cost_usd,
-    SUM(CASE WHEN date(started_at) = date('now') THEN 1 ELSE 0 END) AS today_sessions,
-    COALESCE(SUM(CASE WHEN date(started_at) = date('now') THEN message_count ELSE 0 END), 0) AS today_messages,
-    COALESCE(SUM(CASE WHEN date(started_at) = date('now') THEN COALESCE(actual_cost_usd, estimated_cost_usd, 0) ELSE 0 END), 0) AS today_cost_usd,
+    SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN 1 ELSE 0 END) AS today_sessions,
+    COALESCE(SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN message_count ELSE 0 END), 0) AS today_messages,
+    COALESCE(SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN COALESCE(actual_cost_usd, estimated_cost_usd, 0) ELSE 0 END), 0) AS today_cost_usd,
     SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) AS active_sessions
   FROM sessions
 `.trim();
@@ -182,7 +182,7 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
     const names = await listAgents();
     const results = await Promise.allSettled(
       names.map(async (name) => {
-        const data = await readRemoteJson<unknown>(name, '~/.hermes/cron/jobs.json');
+        const data = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
         if (!Array.isArray(data)) return { name, jobs: [] as CronJobJson[] };
         return { name, jobs: data as CronJobJson[] };
       }),
@@ -221,14 +221,14 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       names.map(async (name) => {
         // Reuse the per-agent skills endpoint logic inline
         const { listRemoteDir, readRemoteFile } = await import('../agent-data-source.js');
-        const cats = await listRemoteDir(name, '~/.hermes/skills');
+        const cats = await listRemoteDir(name, '/var/lib/hermes/.hermes/skills');
         const cats2: Array<{ name: string; skills: Array<{ id: string; name: string; category: string; files: string[]; requiredConfig: string[]; agents: string[] }> }> = [];
         for (const cat of cats) {
-          const skills = await listRemoteDir(name, `~/.hermes/skills/${cat}`);
+          const skills = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${cat}`);
           if (skills.length === 0) continue;
           const catSkills = await Promise.all(skills.map(async (skillName) => {
-            const files = await listRemoteDir(name, `~/.hermes/skills/${cat}/${skillName}`);
-            const yaml = await readRemoteFile(name, `~/.hermes/skills/${cat}/${skillName}/skill.yaml`);
+            const files = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${cat}/${skillName}`);
+            const yaml = await readRemoteFile(name, `/var/lib/hermes/.hermes/skills/${cat}/${skillName}/skill.yaml`);
             const requiredConfig = extractRequiredConfig(yaml ?? '');
             return {
               id: `${cat}/${skillName}`,
