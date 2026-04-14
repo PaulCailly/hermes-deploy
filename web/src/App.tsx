@@ -6,6 +6,8 @@ import { OrgDashboard } from './features/dashboard/OrgDashboard';
 import { AgentList } from './features/agents/AgentList';
 import { AgentWorkspace } from './features/agent/AgentWorkspace';
 import { SkillsLibrary } from './features/library/SkillsLibrary';
+import { TeamsPage } from './features/teams/TeamsPage';
+import { SettingsPage } from './features/settings/SettingsPage';
 import { NewDeploymentWizard } from './features/wizard/NewDeploymentWizard';
 import { JobFullScreen } from './features/jobs/JobFullScreen';
 import type { Route, Navigate } from './lib/types';
@@ -41,6 +43,12 @@ export function App() {
 
       case 'library':
         return <SkillsLibrary navigate={navigate} />;
+
+      case 'teams':
+        return <TeamsPage />;
+
+      case 'settings':
+        return <SettingsPage />;
 
       case 'new':
         return (

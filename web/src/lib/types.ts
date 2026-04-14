@@ -10,6 +10,8 @@ export type Route =
   | { page: 'agents' }
   | { page: 'agent'; name: string; tab: AgentTab }
   | { page: 'library' }
+  | { page: 'teams' }
+  | { page: 'settings' }
   | { page: 'new' }
   | { page: 'job'; jobId: string };
 

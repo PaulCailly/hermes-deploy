@@ -60,6 +60,20 @@ export function Sidebar({ route, navigate, agents }: SidebarProps) {
         <i className="fa-solid fa-book mr-2 text-[12px]" />
         Skills Library
       </button>
+      <button
+        className={`px-4 py-2 text-left text-[13px] ${isActive('teams')} hover:text-indigo-300 transition-colors`}
+        onClick={() => navigate({ page: 'teams' })}
+      >
+        <i className="fa-solid fa-users mr-2 text-[12px]" />
+        Teams
+      </button>
+      <button
+        className={`px-4 py-2 text-left text-[13px] ${isActive('settings')} hover:text-indigo-300 transition-colors`}
+        onClick={() => navigate({ page: 'settings' })}
+      >
+        <i className="fa-solid fa-gear mr-2 text-[12px]" />
+        Settings
+      </button>
 
       {/* Agent Shortcuts */}
       <div className="px-4 text-[10px] uppercase text-slate-500 tracking-widest mt-4 mb-1">Agents</div>
