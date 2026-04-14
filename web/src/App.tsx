@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './lib/api';
 import { AppShell } from './components/layout/AppShell';
+import { ConnectionBanner } from './components/ConnectionBanner';
 import { OrgDashboard } from './features/dashboard/OrgDashboard';
 import { AgentList } from './features/agents/AgentList';
 import { AgentWorkspace } from './features/agent/AgentWorkspace';
@@ -15,14 +16,18 @@ import type { DeploymentSummaryDto } from '@hermes/dto';
 
 export function App() {
   const [route, setRoute] = useState<Route>({ page: 'dashboard' });
+  const qc = useQueryClient();
 
   const navigate: Navigate = (r) => setRoute(r);
 
-  const { data: agents = [] } = useQuery({
+  const agentsQuery = useQuery({
     queryKey: ['agents'],
     queryFn: () => apiFetch<DeploymentSummaryDto[]>('/api/deployments'),
     refetchInterval: 15_000,
+    retry: false,
   });
+  const agents = agentsQuery.data ?? [];
+  const agentsError = agentsQuery.error instanceof Error ? agentsQuery.error : null;
 
   function renderPage() {
     switch (route.page) {
@@ -73,6 +78,10 @@ export function App() {
 
   return (
     <AppShell route={route} navigate={navigate} agents={agents}>
+      <ConnectionBanner
+        error={agentsError}
+        onRetry={() => qc.invalidateQueries({ queryKey: ['agents'] })}
+      />
       {renderPage()}
     </AppShell>
   );
