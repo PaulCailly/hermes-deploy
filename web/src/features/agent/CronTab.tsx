@@ -1,5 +1,5 @@
 import { StatusPulse } from '../../components/shared/StatusPulse';
-import { useAgentCron } from '../../lib/agent-api';
+import { useAgentCron, useCronToggle } from '../../lib/agent-api';
 
 interface CronTabProps {
   name: string;
@@ -18,6 +18,7 @@ function timeAgo(iso: string): string {
 
 export function CronTab({ name }: CronTabProps) {
   const jobsQ = useAgentCron(name);
+  const toggleM = useCronToggle(name);
   const jobs = jobsQ.data ?? [];
   const enabledCount = jobs.filter((j) => j.enabled).length;
 
@@ -43,13 +44,14 @@ export function CronTab({ name }: CronTabProps) {
             const isRunning = job.state === 'running';
             const isDisabled = !job.enabled;
             const isFailed = job.state === 'failed';
+            const busy = toggleM.isPending && toggleM.variables === job.id;
 
             return (
               <div
                 key={job.id}
                 className={`bg-[#161822] border rounded-lg p-3.5 ${
                   isRunning ? 'border-green-500/20' : 'border-[#2a2d3a]'
-                } ${isDisabled ? 'opacity-50' : ''}`}
+                } ${isDisabled ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-2 mb-2">
                   {isRunning ? (
@@ -70,6 +72,24 @@ export function CronTab({ name }: CronTabProps) {
                   }`}>
                     {isDisabled ? 'disabled' : job.state}
                   </span>
+                  <button
+                    className={`text-[10px] px-2 py-1 rounded transition-colors disabled:opacity-50 ${
+                      isDisabled
+                        ? 'text-green-400 bg-green-500/10 hover:bg-green-500/20'
+                        : 'text-slate-400 bg-[#1e2030] hover:bg-[#26283a]'
+                    }`}
+                    onClick={() => toggleM.mutate(job.id)}
+                    disabled={busy || !job.id}
+                    title={isDisabled ? 'Enable job' : 'Disable job'}
+                  >
+                    {busy ? (
+                      <i className="fa-solid fa-spinner fa-spin" />
+                    ) : isDisabled ? (
+                      <><i className="fa-solid fa-play mr-1" />Enable</>
+                    ) : (
+                      <><i className="fa-solid fa-pause mr-1" />Disable</>
+                    )}
+                  </button>
                 </div>
 
                 {!isDisabled && job.prompt && (

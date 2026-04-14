@@ -119,7 +119,16 @@ function MessageBubble({ msg }: { msg: AgentMessage }) {
 export function SessionsTab({ name }: SessionsTabProps) {
   const [filter, setFilter] = useState('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const sessionsQ = useAgentSessions(name, { platform: filter, limit: 100 });
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQ, setSearchQ] = useState('');
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQ(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const sessionsQ = useAgentSessions(name, { platform: filter, limit: 100, q: searchQ || undefined });
   const messagesQ = useAgentMessages(name, selectedId);
 
   const sessions = sessionsQ.data ?? [];
@@ -142,7 +151,17 @@ export function SessionsTab({ name }: SessionsTabProps) {
         <div className="p-3 border-b border-[#2a2d3a]">
           <div className="flex items-center gap-2 bg-[#161822] border border-[#2a2d3a] rounded-md px-2.5 py-2">
             <i className="fa-solid fa-magnifying-glass text-slate-600 text-[12px]" />
-            <span className="text-slate-600 text-[12px]">Search sessions...</span>
+            <input
+              className="bg-transparent text-[12px] text-slate-200 outline-none flex-1 placeholder:text-slate-600"
+              placeholder="Search sessions..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+            {searchInput && (
+              <button className="text-slate-600 hover:text-slate-400 text-[11px]" onClick={() => setSearchInput('')}>
+                <i className="fa-solid fa-xmark" />
+              </button>
+            )}
           </div>
           <div className="flex gap-1.5 mt-2 flex-wrap">
             {filters.map((f) => (

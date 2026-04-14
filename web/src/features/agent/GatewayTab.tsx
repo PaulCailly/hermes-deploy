@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { StatusPulse } from '../../components/shared/StatusPulse';
 import { PlatformIcon, platformLabel } from '../../components/shared/PlatformIcon';
-import { useAgentGateway } from '../../lib/agent-api';
+import { useAgentGateway, useGatewayAction } from '../../lib/agent-api';
 
 interface GatewayTabProps {
   name: string;
@@ -8,7 +9,26 @@ interface GatewayTabProps {
 
 export function GatewayTab({ name }: GatewayTabProps) {
   const gwQ = useAgentGateway(name);
+  const actionM = useGatewayAction(name);
+  const [lastOutput, setLastOutput] = useState<string | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
+
   const gw = gwQ.data;
+
+  async function runAction(action: 'start' | 'stop' | 'restart') {
+    setLastOutput(null);
+    setLastError(null);
+    try {
+      const res = await actionM.mutateAsync(action);
+      if (res.ok) {
+        setLastOutput(res.output || `gateway ${action} succeeded`);
+      } else {
+        setLastError(res.output || `gateway ${action} failed`);
+      }
+    } catch (e: unknown) {
+      setLastError(e instanceof Error ? e.message : 'Action failed');
+    }
+  }
 
   if (gwQ.isLoading) {
     return <div className="p-5 text-slate-500 text-sm">Loading gateway state…</div>;
@@ -22,6 +42,8 @@ export function GatewayTab({ name }: GatewayTabProps) {
       </div>
     );
   }
+
+  const busy = actionM.isPending;
 
   return (
     <div className="p-5 max-w-4xl">
@@ -40,9 +62,55 @@ export function GatewayTab({ name }: GatewayTabProps) {
         <span className={`text-[12px] font-medium ${gw.isRunning ? 'text-green-500' : 'text-slate-500'}`}>
           {gw.isRunning ? 'Running' : 'Stopped'}
         </span>
+        <div className="flex gap-1.5 ml-3">
+          {gw.isRunning ? (
+            <>
+              <button
+                className="text-[10px] text-slate-400 bg-[#1e2030] px-2.5 py-1.5 rounded hover:bg-[#26283a] disabled:opacity-50 transition-colors"
+                onClick={() => runAction('restart')}
+                disabled={busy}
+              >
+                <i className="fa-solid fa-rotate-right mr-1" />Restart
+              </button>
+              <button
+                className="text-[10px] text-red-400 bg-red-500/10 px-2.5 py-1.5 rounded hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+                onClick={() => runAction('stop')}
+                disabled={busy}
+              >
+                <i className="fa-solid fa-stop mr-1" />Stop
+              </button>
+            </>
+          ) : (
+            <button
+              className="text-[10px] text-green-400 bg-green-500/10 px-2.5 py-1.5 rounded hover:bg-green-500/20 disabled:opacity-50 transition-colors"
+              onClick={() => runAction('start')}
+              disabled={busy}
+            >
+              <i className="fa-solid fa-play mr-1" />Start
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Connected Platforms */}
+      {busy && (
+        <div className="mb-4 p-2.5 text-xs text-indigo-400 bg-indigo-500/5 border border-indigo-500/20 rounded">
+          <i className="fa-solid fa-spinner fa-spin mr-1.5" />Running action…
+        </div>
+      )}
+
+      {lastOutput && (
+        <div className="mb-4 p-2.5 text-xs text-green-400 bg-green-500/5 border border-green-500/20 rounded font-mono whitespace-pre-wrap">
+          {lastOutput}
+        </div>
+      )}
+
+      {lastError && (
+        <div className="mb-4 p-2.5 text-xs text-red-400 bg-red-500/5 border border-red-500/20 rounded font-mono whitespace-pre-wrap">
+          {lastError}
+        </div>
+      )}
+
+      {/* Platforms */}
       <div className="text-[13px] font-semibold text-slate-200 mb-3">Platforms</div>
       {gw.platforms.length === 0 ? (
         <div className="text-slate-500 text-sm text-center py-6">No platforms configured</div>
