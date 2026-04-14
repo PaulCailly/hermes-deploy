@@ -4,7 +4,8 @@ import {
   readRemoteJson,
   listRemoteDir,
   readRemoteFile,
-  AgentNotFoundError,
+  writeRemoteFile,
+  runRemoteCommand,
 } from '../agent-data-source.js';
 import { StateStore } from '../../state/store.js';
 import { getStatePaths } from '../../state/paths.js';
@@ -158,16 +159,25 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
   // ---------- GET /api/agents/:name/sessions ----------
   app.get<{
     Params: { name: string };
-    Querystring: { limit?: string; platform?: string };
+    Querystring: { limit?: string; platform?: string; q?: string };
   }>('/api/agents/:name/sessions', async (req, reply) => {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
 
     const limit = Math.min(parseInt(req.query.limit ?? '50', 10) || 50, 500);
-    // platform filter is applied client-side for simplicity (SQL injection risk otherwise)
+
+    // Build WHERE clause with SQL-escaped search term for title
+    let whereClause = '';
+    if (req.query.q) {
+      // Escape single quotes and % for LIKE — keep the query simple
+      const q = req.query.q.replace(/'/g, "''").replace(/\\/g, '\\\\');
+      whereClause = `WHERE title LIKE '%${q}%'`;
+    }
+
     const rows = await runSqliteJson<SessionRow>(name, `
       SELECT ${SESSION_COLUMNS}
       FROM sessions
+      ${whereClause}
       ORDER BY started_at DESC
       LIMIT ${limit}
     `.trim());
@@ -297,6 +307,61 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       platforms,
     };
   });
+
+  // ---------- POST /api/agents/:name/gateway/:action ----------
+  // action: start | stop | restart
+  app.post<{ Params: { name: string; action: string } }>(
+    '/api/agents/:name/gateway/:action',
+    async (req, reply) => {
+      const { name, action } = req.params;
+      if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+      if (!['start', 'stop', 'restart'].includes(action)) {
+        return reply.code(400).send({ error: 'invalid action' });
+      }
+      try {
+        const res = await runRemoteCommand(name, `hermes gateway ${action} 2>&1`);
+        return reply.code(res.exitCode === 0 ? 200 : 500).send({
+          ok: res.exitCode === 0,
+          exitCode: res.exitCode,
+          output: res.stdout || res.stderr,
+        });
+      } catch (e: unknown) {
+        return reply.code(500).send({ error: e instanceof Error ? e.message : 'SSH failed' });
+      }
+    },
+  );
+
+  // ---------- PATCH /api/agents/:name/cron/:jobId/toggle ----------
+  // Toggle the `enabled` field on a cron job in ~/.hermes/cron/jobs.json
+  app.patch<{ Params: { name: string; jobId: string } }>(
+    '/api/agents/:name/cron/:jobId/toggle',
+    async (req, reply) => {
+      const { name, jobId } = req.params;
+      if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+      if (!/^[A-Za-z0-9_-]+$/.test(jobId)) {
+        return reply.code(400).send({ error: 'invalid job id' });
+      }
+
+      const data = await readRemoteJson<unknown>(name, '~/.hermes/cron/jobs.json');
+      if (!Array.isArray(data)) {
+        return reply.code(404).send({ error: 'jobs.json not found or invalid' });
+      }
+
+      const jobs = data as Array<Record<string, unknown>>;
+      const job = jobs.find((j) => String(j.id ?? '') === jobId);
+      if (!job) {
+        return reply.code(404).send({ error: 'job not found' });
+      }
+      job.enabled = !(job.enabled !== false);
+
+      try {
+        await writeRemoteFile(name, '~/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
+        return { ok: true, enabled: job.enabled };
+      } catch (e: unknown) {
+        return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
+      }
+    },
+  );
 }
 
 // ---------- Helpers ----------

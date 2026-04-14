@@ -119,3 +119,24 @@ export async function listRemoteDir(name: string, path: string): Promise<string[
     return [];
   }
 }
+
+/**
+ * Write a file to the remote agent via SFTP. Expands `~/` to $HOME via SSH
+ * before writing because SFTP doesn't expand tilde.
+ */
+export async function writeRemoteFile(name: string, path: string, contents: string): Promise<void> {
+  const session = await getAgentSshSession(name);
+  let resolvedPath = path;
+  if (path.startsWith('~/')) {
+    const res = await session.exec(`echo $HOME`);
+    const home = res.stdout.trim();
+    if (home) resolvedPath = `${home}/${path.slice(2)}`;
+  }
+  await session.uploadFile(resolvedPath, contents);
+}
+
+/** Run an arbitrary command on the agent. Returns exec result. */
+export async function runRemoteCommand(name: string, cmd: string): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+  const session = await getAgentSshSession(name);
+  return session.exec(cmd);
+}
