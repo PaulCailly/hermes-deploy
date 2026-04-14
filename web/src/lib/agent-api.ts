@@ -116,6 +116,87 @@ export function useCronToggle(name: string) {
   });
 }
 
+export interface CronJobInput {
+  name: string;
+  prompt: string;
+  schedule: { kind: string; display?: string; expression?: string };
+  enabled?: boolean;
+  model?: string;
+  deliver?: string;
+  skills?: string[];
+}
+
+export function useCronCreate(name: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CronJobInput) =>
+      apiFetch<{ ok: boolean; id: string }>(
+        `/api/agents/${encodeURIComponent(name)}/cron`,
+        { method: 'POST', body: JSON.stringify(input) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agent-cron', name] });
+      qc.invalidateQueries({ queryKey: ['org-crons'] });
+    },
+  });
+}
+
+export function useCronUpdate(name: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ jobId, input }: { jobId: string; input: CronJobInput }) =>
+      apiFetch<{ ok: boolean }>(
+        `/api/agents/${encodeURIComponent(name)}/cron/${encodeURIComponent(jobId)}`,
+        { method: 'PUT', body: JSON.stringify(input) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agent-cron', name] });
+      qc.invalidateQueries({ queryKey: ['org-crons'] });
+    },
+  });
+}
+
+export function useCronDelete(name: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      apiFetch<{ ok: boolean }>(
+        `/api/agents/${encodeURIComponent(name)}/cron/${encodeURIComponent(jobId)}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agent-cron', name] });
+      qc.invalidateQueries({ queryKey: ['org-crons'] });
+    },
+  });
+}
+
+// Skill file write
+export function useSkillFileWrite(name: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ category, skill, file, content }: { category: string; skill: string; file: string; content: string }) => {
+      const token = sessionStorage.getItem('hermes-deploy-token');
+      const res = await fetch(
+        `/api/agents/${encodeURIComponent(name)}/skills/${encodeURIComponent(category)}/${encodeURIComponent(skill)}/${encodeURIComponent(file)}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'text/plain',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: content,
+        },
+      );
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['agent-skill-file', name, variables.category, variables.skill, variables.file] });
+    },
+  });
+}
+
 // ---------- Org-level hooks ----------
 
 export interface OrgStats {

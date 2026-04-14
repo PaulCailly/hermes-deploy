@@ -1,5 +1,9 @@
+import { useState } from 'react';
 import { StatusPulse } from '../../components/shared/StatusPulse';
-import { useAgentCron, useCronToggle } from '../../lib/agent-api';
+import { useAgentCron, useCronToggle, useCronCreate, useCronUpdate, useCronDelete } from '../../lib/agent-api';
+import { CronJobForm } from './CronJobForm';
+import type { AgentCronJob } from '../../lib/agent-types';
+import type { CronJobInput } from '../../lib/agent-api';
 
 interface CronTabProps {
   name: string;
@@ -19,8 +23,43 @@ function timeAgo(iso: string): string {
 export function CronTab({ name }: CronTabProps) {
   const jobsQ = useAgentCron(name);
   const toggleM = useCronToggle(name);
+  const createM = useCronCreate(name);
+  const updateM = useCronUpdate(name);
+  const deleteM = useCronDelete(name);
+
+  const [editing, setEditing] = useState<AgentCronJob | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+
   const jobs = jobsQ.data ?? [];
   const enabledCount = jobs.filter((j) => j.enabled).length;
+
+  async function handleCreate(input: CronJobInput) {
+    setFormError(null);
+    try {
+      await createM.mutateAsync(input);
+      setCreating(false);
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : 'create failed');
+    }
+  }
+
+  async function handleUpdate(input: CronJobInput) {
+    if (!editing) return;
+    setFormError(null);
+    try {
+      await updateM.mutateAsync({ jobId: editing.id, input });
+      setEditing(null);
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : 'update failed');
+    }
+  }
+
+  async function handleDelete(jobId: string) {
+    await deleteM.mutateAsync(jobId);
+    setConfirmDelete(null);
+  }
 
   return (
     <div className="p-5 max-w-3xl">
@@ -28,7 +67,15 @@ export function CronTab({ name }: CronTabProps) {
         <div className="text-sm font-semibold text-slate-200">
           <i className="fa-solid fa-calendar-days text-indigo-500 mr-2" />Scheduled Jobs
         </div>
-        <span className="text-[11px] text-slate-500">{jobs.length} jobs · {enabledCount} enabled</span>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-slate-500">{jobs.length} jobs · {enabledCount} enabled</span>
+          <button
+            className="text-[11px] px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+            onClick={() => { setCreating(true); setFormError(null); }}
+          >
+            <i className="fa-solid fa-plus mr-1" />New Job
+          </button>
+        </div>
       </div>
 
       {jobsQ.isLoading ? (
@@ -44,7 +91,8 @@ export function CronTab({ name }: CronTabProps) {
             const isRunning = job.state === 'running';
             const isDisabled = !job.enabled;
             const isFailed = job.state === 'failed';
-            const busy = toggleM.isPending && toggleM.variables === job.id;
+            const busyToggle = toggleM.isPending && toggleM.variables === job.id;
+            const busyDelete = deleteM.isPending && deleteM.variables === job.id;
 
             return (
               <div
@@ -79,16 +127,31 @@ export function CronTab({ name }: CronTabProps) {
                         : 'text-slate-400 bg-[#1e2030] hover:bg-[#26283a]'
                     }`}
                     onClick={() => toggleM.mutate(job.id)}
-                    disabled={busy || !job.id}
+                    disabled={busyToggle || !job.id}
                     title={isDisabled ? 'Enable job' : 'Disable job'}
                   >
-                    {busy ? (
+                    {busyToggle ? (
                       <i className="fa-solid fa-spinner fa-spin" />
                     ) : isDisabled ? (
                       <><i className="fa-solid fa-play mr-1" />Enable</>
                     ) : (
                       <><i className="fa-solid fa-pause mr-1" />Disable</>
                     )}
+                  </button>
+                  <button
+                    className="text-[10px] px-2 py-1 rounded text-slate-400 bg-[#1e2030] hover:bg-[#26283a] transition-colors"
+                    onClick={() => { setEditing(job); setFormError(null); }}
+                    title="Edit job"
+                  >
+                    <i className="fa-solid fa-pen-to-square" />
+                  </button>
+                  <button
+                    className="text-[10px] px-2 py-1 rounded text-red-400 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+                    onClick={() => setConfirmDelete(job.id)}
+                    disabled={busyDelete}
+                    title="Delete job"
+                  >
+                    {busyDelete ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-trash" />}
                   </button>
                 </div>
 
@@ -111,10 +174,47 @@ export function CronTab({ name }: CronTabProps) {
                     {job.lastError}
                   </div>
                 )}
+
+                {confirmDelete === job.id && (
+                  <div className="mt-2 flex items-center gap-2 p-2 bg-red-500/5 border border-red-500/20 rounded">
+                    <span className="text-[11px] text-red-400 flex-1">Delete this job?</span>
+                    <button
+                      className="text-[10px] px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white transition-colors"
+                      onClick={() => handleDelete(job.id)}
+                    >
+                      Delete
+                    </button>
+                    <button
+                      className="text-[10px] px-2 py-1 rounded text-slate-400 hover:text-slate-200 transition-colors"
+                      onClick={() => setConfirmDelete(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
+      )}
+
+      {creating && (
+        <CronJobForm
+          onCancel={() => { setCreating(false); setFormError(null); }}
+          onSubmit={handleCreate}
+          busy={createM.isPending}
+          error={formError}
+        />
+      )}
+
+      {editing && (
+        <CronJobForm
+          initial={editing}
+          onCancel={() => { setEditing(null); setFormError(null); }}
+          onSubmit={handleUpdate}
+          busy={updateM.isPending}
+          error={formError}
+        />
       )}
     </div>
   );
