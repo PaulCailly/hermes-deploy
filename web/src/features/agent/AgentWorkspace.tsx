@@ -37,10 +37,10 @@ export function AgentWorkspace({ name, tab, navigate }: AgentWorkspaceProps) {
     switch (tab) {
       case 'overview':  return <OverviewTab name={name} status={status} navigate={navigate} />;
       case 'sessions':  return <SessionsTab name={name} />;
-      case 'analytics': return <AnalyticsTab />;
-      case 'skills':    return <SkillsTab />;
-      case 'cron':      return <CronTab />;
-      case 'gateway':   return <GatewayTab />;
+      case 'analytics': return <AnalyticsTab name={name} />;
+      case 'skills':    return <SkillsTab name={name} />;
+      case 'cron':      return <CronTab name={name} />;
+      case 'gateway':   return <GatewayTab name={name} />;
       case 'infra':     return <InfraTab name={name} status={status} navigate={navigate} />;
       case 'config':    return <ConfigTab name={name} />;
       case 'logs':      return <LogsTab name={name} />;

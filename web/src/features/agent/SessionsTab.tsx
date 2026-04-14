@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { StatusPulse } from '../../components/shared/StatusPulse';
 import { PlatformIcon, platformLabel } from '../../components/shared/PlatformIcon';
-import { getMockSessions, getMockMessages } from '../../lib/mock-data';
+import { useAgentSessions, useAgentMessages } from '../../lib/agent-api';
 import type { AgentSession, AgentMessage } from '../../lib/agent-types';
 
 interface SessionsTabProps {
@@ -11,6 +11,7 @@ interface SessionsTabProps {
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m`;
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h`;
@@ -59,7 +60,7 @@ function MessageBubble({ msg }: { msg: AgentMessage }) {
         </div>
         <div className="flex-1">
           <div className="text-[11px] text-blue-400 font-medium mb-1">User <span className="text-slate-600 font-normal ml-1.5">{timeAgo(msg.timestamp)} ago</span></div>
-          <div className="bg-blue-900/30 rounded-tr-lg rounded-br-lg rounded-bl-lg p-2.5 text-slate-200 text-[12px] leading-relaxed inline-block">
+          <div className="bg-blue-900/30 rounded-tr-lg rounded-br-lg rounded-bl-lg p-2.5 text-slate-200 text-[12px] leading-relaxed inline-block whitespace-pre-wrap">
             {msg.content}
           </div>
         </div>
@@ -81,11 +82,11 @@ function MessageBubble({ msg }: { msg: AgentMessage }) {
               <div className="flex items-center gap-1.5 mb-1.5">
                 <i className="fa-solid fa-terminal text-green-500 text-[10px]" />
                 <span className="text-[12px] text-slate-200 font-medium">{tc.kind}</span>
-                <span className="text-[11px] text-slate-500 font-mono">{tc.summary}</span>
+                <span className="text-[11px] text-slate-500 font-mono truncate">{tc.summary}</span>
               </div>
             )}
-            <div className="bg-[#0d1117] rounded p-2 font-mono text-[11px] text-slate-400 max-h-[60px] overflow-hidden leading-snug">
-              {msg.content.split('\n').map((line, i) => <div key={i}>{line}</div>)}
+            <div className="bg-[#0d1117] rounded p-2 font-mono text-[11px] text-slate-400 max-h-[120px] overflow-auto leading-snug whitespace-pre-wrap">
+              {msg.content}
             </div>
           </div>
         </div>
@@ -93,7 +94,6 @@ function MessageBubble({ msg }: { msg: AgentMessage }) {
     );
   }
 
-  // assistant
   return (
     <div className="flex gap-2.5">
       <div className="w-7 h-7 bg-indigo-500/15 rounded-md flex items-center justify-center flex-shrink-0">
@@ -105,10 +105,10 @@ function MessageBubble({ msg }: { msg: AgentMessage }) {
           <div className="bg-purple-500/8 border border-purple-500/20 rounded-md p-2 mb-1.5 text-[11px] text-purple-300">
             <i className="fa-solid fa-brain mr-1 text-[10px]" />
             <span className="font-medium">Reasoning</span>
-            <div className="mt-1 text-purple-400/70 italic leading-snug">{msg.reasoning}</div>
+            <div className="mt-1 text-purple-400/70 italic leading-snug whitespace-pre-wrap">{msg.reasoning}</div>
           </div>
         )}
-        <div className="bg-[#161822] border border-[#2a2d3a] rounded-tr-lg rounded-br-lg rounded-bl-lg p-2.5 text-slate-200 text-[12px] leading-relaxed">
+        <div className="bg-[#161822] border border-[#2a2d3a] rounded-tr-lg rounded-br-lg rounded-bl-lg p-2.5 text-slate-200 text-[12px] leading-relaxed whitespace-pre-wrap">
           {msg.content}
         </div>
       </div>
@@ -117,14 +117,23 @@ function MessageBubble({ msg }: { msg: AgentMessage }) {
 }
 
 export function SessionsTab({ name }: SessionsTabProps) {
-  const sessions = getMockSessions();
-  const [selectedId, setSelectedId] = useState(sessions[0]?.id ?? '');
   const [filter, setFilter] = useState('all');
-  const messages = getMockMessages(selectedId);
-  const selected = sessions.find((s) => s.id === selectedId);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const sessionsQ = useAgentSessions(name, { platform: filter, limit: 100 });
+  const messagesQ = useAgentMessages(name, selectedId);
 
-  const filters = ['all', 'telegram', 'slack', 'cli', 'cron'];
-  const filtered = filter === 'all' ? sessions : sessions.filter((s) => s.source === filter);
+  const sessions = sessionsQ.data ?? [];
+
+  // Auto-select first session when data arrives
+  useEffect(() => {
+    if (!selectedId && sessions.length > 0) {
+      setSelectedId(sessions[0]!.id);
+    }
+  }, [sessions, selectedId]);
+
+  const selected = sessions.find((s) => s.id === selectedId);
+  const messages = messagesQ.data ?? [];
+  const filters = ['all', 'telegram', 'slack', 'cli', 'cron', 'discord'];
 
   return (
     <div className="flex h-full">
@@ -151,13 +160,18 @@ export function SessionsTab({ name }: SessionsTabProps) {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {filtered.map((s) => (
-            <SessionListItem key={s.id} session={s} selected={s.id === selectedId} onSelect={() => setSelectedId(s.id)} />
-          ))}
+          {sessionsQ.isLoading ? (
+            <div className="text-slate-500 text-sm text-center py-6">Loading…</div>
+          ) : sessions.length === 0 ? (
+            <div className="text-slate-500 text-sm text-center py-6">No sessions</div>
+          ) : (
+            sessions.map((s) => (
+              <SessionListItem key={s.id} session={s} selected={s.id === selectedId} onSelect={() => setSelectedId(s.id)} />
+            ))
+          )}
         </div>
         <div className="p-2.5 border-t border-[#2a2d3a] flex justify-between text-[11px] text-slate-600 bg-[#161822]">
           <span>{sessions.length} sessions</span>
-          <span>DB: 48.2 MB</span>
         </div>
       </div>
 
@@ -174,7 +188,7 @@ export function SessionsTab({ name }: SessionsTabProps) {
                 </>
               )}
             </div>
-            <div className="flex gap-3 text-[11px] text-slate-500">
+            <div className="flex gap-3 text-[11px] text-slate-500 flex-wrap">
               <span><PlatformIcon platform={selected.source} className="text-[10px] mr-1" />{platformLabel(selected.source)}</span>
               <span><i className="fa-solid fa-clock mr-1" />Started {timeAgo(selected.startedAt)} ago</span>
               <span><i className="fa-solid fa-message mr-1" />{selected.messageCount} messages</span>
@@ -185,15 +199,19 @@ export function SessionsTab({ name }: SessionsTabProps) {
           </div>
         )}
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-          {messages.length > 0 ? (
-            messages.map((m) => <MessageBubble key={m.id} msg={m} />)
-          ) : (
+          {!selected ? (
             <div className="flex items-center justify-center h-full text-slate-500 text-sm">
               <div className="text-center">
                 <i className="fa-solid fa-comments text-2xl mb-2 block text-slate-600" />
                 Select a session to view messages
               </div>
             </div>
+          ) : messagesQ.isLoading ? (
+            <div className="text-slate-500 text-sm text-center">Loading messages…</div>
+          ) : messages.length === 0 ? (
+            <div className="text-slate-500 text-sm text-center">No messages</div>
+          ) : (
+            messages.map((m) => <MessageBubble key={m.id} msg={m} />)
           )}
         </div>
       </div>
