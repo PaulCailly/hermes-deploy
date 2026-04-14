@@ -256,13 +256,44 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const { name, category, skill, file } = req.params;
       if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
-      // Sanitize — no path traversal
       if ([category, skill, file].some((p) => p.includes('..') || p.includes('/'))) {
         return reply.code(400).send({ error: 'invalid path' });
       }
       const body = await readRemoteFile(name, `~/.hermes/skills/${category}/${skill}/${file}`);
       if (body === null) return reply.code(404).send({ error: 'file not found' });
       return reply.type('text/plain').send(body);
+    },
+  );
+
+  // ---------- PUT /api/agents/:name/skills/:category/:skill/:file ----------
+  // Write a skill file. Body is raw text/plain. Only allows editing files
+  // in categories we found during list (no arbitrary file writes).
+  app.put<{
+    Params: { name: string; category: string; skill: string; file: string };
+  }>(
+    '/api/agents/:name/skills/:category/:skill/:file',
+    async (req, reply) => {
+      const { name, category, skill, file } = req.params;
+      if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+      if ([category, skill, file].some((p) => p.includes('..') || p.includes('/'))) {
+        return reply.code(400).send({ error: 'invalid path' });
+      }
+      // Accept body as text (Fastify default is JSON; treat body as string)
+      let content: string;
+      if (typeof req.body === 'string') {
+        content = req.body;
+      } else if (req.body && typeof req.body === 'object' && 'content' in (req.body as Record<string, unknown>)) {
+        content = String((req.body as Record<string, unknown>).content ?? '');
+      } else {
+        return reply.code(400).send({ error: 'body required (text/plain or {content})' });
+      }
+
+      try {
+        await writeRemoteFile(name, `~/.hermes/skills/${category}/${skill}/${file}`, content);
+        return { ok: true };
+      } catch (e: unknown) {
+        return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
+      }
     },
   );
 

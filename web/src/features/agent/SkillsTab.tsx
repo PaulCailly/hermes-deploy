@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useAgentSkills, useAgentSkillFile } from '../../lib/agent-api';
+import { useAgentSkills, useAgentSkillFile, useSkillFileWrite } from '../../lib/agent-api';
 import type { AgentSkill } from '../../lib/agent-types';
 
 interface SkillsTabProps {
   name: string;
+}
+
+// Files that can be edited in-place (safe formats)
+const EDITABLE_EXT = ['.md', '.txt', '.yaml', '.yml', '.json'];
+function isEditable(file: string): boolean {
+  return EDITABLE_EXT.some((ext) => file.toLowerCase().endsWith(ext));
 }
 
 export function SkillsTab({ name }: SkillsTabProps) {
@@ -13,6 +19,9 @@ export function SkillsTab({ name }: SkillsTabProps) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [editBuffer, setEditBuffer] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Auto-select first skill on load
   useEffect(() => {
@@ -23,6 +32,12 @@ export function SkillsTab({ name }: SkillsTabProps) {
     }
   }, [categories, selectedSkill]);
 
+  // Reset edit mode when changing file/skill
+  useEffect(() => {
+    setEditing(false);
+    setSaveError(null);
+  }, [selectedSkill?.id, selectedFile]);
+
   const totalSkills = categories.reduce((sum, c) => sum + c.skills.length, 0);
   const fileQ = useAgentSkillFile(
     name,
@@ -30,6 +45,7 @@ export function SkillsTab({ name }: SkillsTabProps) {
     selectedSkill?.name ?? '',
     selectedFile ?? '',
   );
+  const writeM = useSkillFileWrite(name);
 
   const filteredCategories = categories.map((c) => ({
     ...c,
@@ -39,6 +55,36 @@ export function SkillsTab({ name }: SkillsTabProps) {
   function toggleCategory(catName: string) {
     setCollapsed((prev) => ({ ...prev, [catName]: !prev[catName] }));
   }
+
+  function startEditing() {
+    setEditBuffer(fileQ.data ?? '');
+    setEditing(true);
+    setSaveError(null);
+  }
+
+  async function saveEdit() {
+    if (!selectedSkill || !selectedFile) return;
+    setSaveError(null);
+    try {
+      await writeM.mutateAsync({
+        category: selectedSkill.category,
+        skill: selectedSkill.name,
+        file: selectedFile,
+        content: editBuffer,
+      });
+      setEditing(false);
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'save failed');
+    }
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setEditBuffer('');
+    setSaveError(null);
+  }
+
+  const canEdit = selectedFile ? isEditable(selectedFile) : false;
 
   return (
     <div className="flex h-full">
@@ -94,16 +140,45 @@ export function SkillsTab({ name }: SkillsTabProps) {
       <div className="flex-1 flex flex-col">
         {selectedSkill ? (
           <>
-            <div className="px-4 py-3 border-b border-[#2a2d3a] bg-[#161822]">
-              <div className="text-sm font-semibold text-slate-200">{selectedSkill.category} / {selectedSkill.name}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                {selectedSkill.files.length} files
-                {selectedSkill.requiredConfig.length > 0 && (
-                  <> · requires: {selectedSkill.requiredConfig.map((k) => (
-                    <code key={k} className="bg-[#1e2030] px-1 py-0.5 rounded text-[10px] ml-1 text-amber-400">{k}</code>
-                  ))}</>
-                )}
+            <div className="px-4 py-3 border-b border-[#2a2d3a] bg-[#161822] flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-200">{selectedSkill.category} / {selectedSkill.name}</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  {selectedSkill.files.length} files
+                  {selectedSkill.requiredConfig.length > 0 && (
+                    <> · requires: {selectedSkill.requiredConfig.map((k) => (
+                      <code key={k} className="bg-[#1e2030] px-1 py-0.5 rounded text-[10px] ml-1 text-amber-400">{k}</code>
+                    ))}</>
+                  )}
+                </div>
               </div>
+              {canEdit && !editing && selectedFile && (
+                <button
+                  className="text-[11px] px-2.5 py-1.5 rounded bg-[#1e2030] hover:bg-[#26283a] text-slate-300 transition-colors"
+                  onClick={startEditing}
+                >
+                  <i className="fa-solid fa-pen-to-square mr-1.5" />Edit
+                </button>
+              )}
+              {editing && (
+                <div className="flex gap-2">
+                  <button
+                    className="text-[11px] px-2.5 py-1.5 rounded text-slate-400 hover:text-slate-200 transition-colors"
+                    onClick={cancelEdit}
+                    disabled={writeM.isPending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="text-[11px] px-2.5 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
+                    onClick={saveEdit}
+                    disabled={writeM.isPending}
+                  >
+                    {writeM.isPending ? <i className="fa-solid fa-spinner fa-spin mr-1" /> : <i className="fa-solid fa-floppy-disk mr-1" />}
+                    Save
+                  </button>
+                </div>
+              )}
             </div>
             <div className="flex gap-2 px-4 pt-3 flex-wrap">
               {selectedSkill.files.map((f) => (
@@ -113,15 +188,31 @@ export function SkillsTab({ name }: SkillsTabProps) {
                     selectedFile === f ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-[#2a2d3a] hover:text-slate-200'
                   } bg-[#1e2030]`}
                   onClick={() => setSelectedFile(f)}
+                  disabled={editing}
                 >
                   {f}
+                  {!isEditable(f) && <i className="fa-solid fa-lock text-[8px] ml-1 text-slate-600" title="Read-only" />}
                 </button>
               ))}
             </div>
             <div className="flex-1 p-4 overflow-auto">
-              <pre className="bg-[#161822] border border-[#2a2d3a] rounded-md p-3 text-[11px] text-slate-400 font-mono leading-relaxed whitespace-pre-wrap">
-                {fileQ.isLoading ? 'Loading…' : fileQ.error ? `Error: ${fileQ.error.message}` : fileQ.data ?? ''}
-              </pre>
+              {saveError && (
+                <div className="mb-3 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5">
+                  {saveError}
+                </div>
+              )}
+              {editing ? (
+                <textarea
+                  className="w-full h-full min-h-[400px] bg-[#161822] border border-indigo-500/30 rounded-md p-3 text-[12px] text-slate-200 font-mono leading-relaxed outline-none resize-none"
+                  value={editBuffer}
+                  onChange={(e) => setEditBuffer(e.target.value)}
+                  spellCheck={false}
+                />
+              ) : (
+                <pre className="bg-[#161822] border border-[#2a2d3a] rounded-md p-3 text-[11px] text-slate-400 font-mono leading-relaxed whitespace-pre-wrap">
+                  {fileQ.isLoading ? 'Loading…' : fileQ.error ? `Error: ${fileQ.error.message}` : fileQ.data ?? ''}
+                </pre>
+              )}
             </div>
           </>
         ) : (

@@ -36,6 +36,11 @@ export async function createDashboardServer(opts: CreateServerOptions): Promise<
   // WebSocket support
   await app.register(websocket);
 
+  // Text/plain body parser (used for skill file writes)
+  app.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body);
+  });
+
   // Auth + DNS rebinding protection
   app.addHook('onRequest', createAuthHook(token, opts.auth, opts.host));
 
