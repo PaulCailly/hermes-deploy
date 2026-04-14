@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { StatusPulse } from '../../components/shared/StatusPulse';
 import { PlatformIcon, platformLabel } from '../../components/shared/PlatformIcon';
-import { useAgentSessions, useAgentMessages } from '../../lib/agent-api';
+import { useAgentSessions, useAgentMessages, useLiveAgentMessages } from '../../lib/agent-api';
 import type { AgentSession, AgentMessage } from '../../lib/agent-types';
 
 interface SessionsTabProps {
@@ -129,7 +129,6 @@ export function SessionsTab({ name }: SessionsTabProps) {
   }, [searchInput]);
 
   const sessionsQ = useAgentSessions(name, { platform: filter, limit: 100, q: searchQ || undefined });
-  const messagesQ = useAgentMessages(name, selectedId);
 
   const sessions = sessionsQ.data ?? [];
 
@@ -141,7 +140,12 @@ export function SessionsTab({ name }: SessionsTabProps) {
   }, [sessions, selectedId]);
 
   const selected = sessions.find((s) => s.id === selectedId);
-  const messages = messagesQ.data ?? [];
+  const isActive = Boolean(selected && !selected.endedAt);
+
+  // Use live WS for active sessions, regular polling query for ended ones
+  const liveMsgs = useLiveAgentMessages(name, selectedId, isActive);
+  const messagesQ = useAgentMessages(name, isActive ? null : selectedId);
+  const messages: AgentMessage[] = isActive ? liveMsgs.messages : (messagesQ.data ?? []);
   const filters = ['all', 'telegram', 'slack', 'cli', 'cron', 'discord'];
 
   return (
@@ -204,6 +208,11 @@ export function SessionsTab({ name }: SessionsTabProps) {
                 <>
                   <StatusPulse status="online" size={8} />
                   <span className="text-[11px] text-green-500">active</span>
+                  {liveMsgs.connected && (
+                    <span className="text-[10px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded">
+                      <i className="fa-solid fa-wifi mr-1" />live
+                    </span>
+                  )}
                 </>
               )}
             </div>

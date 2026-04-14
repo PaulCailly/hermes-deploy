@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './api';
+import { createWs } from './ws';
 import type {
   AgentStats, AgentSession, AgentMessage, AgentSkillCategory,
   AgentCronJob, AgentGatewayState,
@@ -202,6 +204,99 @@ export function useOrgSkills() {
     queryFn: () => apiFetch<OrgSkillCategory[]>('/api/org/skills'),
     retry: false,
   });
+}
+
+// ---------- Live WebSocket hooks ----------
+
+/**
+ * Subscribe to live message updates for an active session via WebSocket.
+ * Returns the latest messages array. Falls back to empty array until the
+ * first message arrives. Pass `enabled=false` to skip the WS connection.
+ */
+export function useLiveAgentMessages(
+  name: string,
+  sessionId: string | null | undefined,
+  enabled: boolean,
+): { messages: AgentMessage[]; connected: boolean } {
+  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [connected, setConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    if (!sessionId || !enabled) {
+      setMessages([]);
+      setConnected(false);
+      return;
+    }
+    const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}/messages`);
+    wsRef.current = ws;
+
+    ws.onopen = () => setConnected(true);
+    ws.onclose = () => setConnected(false);
+    ws.onerror = () => setConnected(false);
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === 'messages' && Array.isArray(data.items)) {
+          setMessages(data.items as AgentMessage[]);
+        }
+      } catch {
+        // ignore malformed frame
+      }
+    };
+
+    return () => {
+      wsRef.current = null;
+      try { ws.close(); } catch { /* ignore */ }
+    };
+  }, [name, sessionId, enabled]);
+
+  return { messages, connected };
+}
+
+/**
+ * Subscribe to live stats updates via WebSocket. Provides near-real-time
+ * deltas when new sessions/messages are written.
+ */
+export function useLiveAgentStats(name: string, enabled: boolean): {
+  data: Partial<AgentStats> | undefined;
+  connected: boolean;
+} {
+  const [data, setData] = useState<Partial<AgentStats> | undefined>(undefined);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      setConnected(false);
+      return;
+    }
+    const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/stats`);
+
+    ws.onopen = () => setConnected(true);
+    ws.onclose = () => setConnected(false);
+    ws.onerror = () => setConnected(false);
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'stats' && msg.data) {
+          setData({
+            totalSessions: msg.data.total_sessions,
+            totalMessages: msg.data.total_messages,
+            totalToolCalls: msg.data.total_tool_calls,
+            totalInputTokens: msg.data.total_input_tokens,
+            totalOutputTokens: msg.data.total_output_tokens,
+            totalCostUSD: msg.data.total_cost_usd,
+          });
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    return () => { try { ws.close(); } catch { /* ignore */ } };
+  }, [name, enabled]);
+
+  return { data, connected };
 }
 
 // ---------- Helpers ----------

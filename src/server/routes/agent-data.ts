@@ -331,6 +331,135 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // ---------- WS /ws/agents/:name/sessions/:sid/messages ----------
+  // Live stream of messages for an active session. Server polls the DB every
+  // 2s and pushes the full message list when the count changes. On the
+  // client, this replaces the React Query snapshot for the current session.
+  app.get<{ Params: { name: string; sid: string } }>(
+    '/ws/agents/:name/sessions/:sid/messages',
+    { websocket: true },
+    async (socket, request) => {
+      const { name, sid } = request.params;
+      if (!(await agentExists(name))) {
+        socket.close(4004, 'agent not found');
+        return;
+      }
+      if (!/^[A-Za-z0-9_-]+$/.test(sid)) {
+        socket.close(4000, 'invalid session id');
+        return;
+      }
+
+      let running = true;
+      let lastCount = -1;
+      let lastTs = '';
+
+      const pollOnce = async () => {
+        const rows = await runSqliteJson<{
+          id: string; session_id: string; role: string; content: string | null;
+          tool_calls: string | null; tool_call_id: string | null; reasoning: string | null;
+          timestamp: string; token_count: number | null;
+        }>(name, `
+          SELECT id, session_id, role, content, tool_calls, tool_call_id, reasoning, timestamp, token_count
+          FROM messages
+          WHERE session_id = '${sid}'
+          ORDER BY timestamp ASC
+        `.trim());
+
+        const lastRowTs = rows.length > 0 ? rows[rows.length - 1]!.timestamp : '';
+        if (rows.length === lastCount && lastRowTs === lastTs) return;
+        lastCount = rows.length;
+        lastTs = lastRowTs;
+
+        const items = rows.map((r) => ({
+          id: r.id,
+          sessionId: r.session_id,
+          role: r.role,
+          content: r.content ?? '',
+          toolCalls: r.tool_calls ? safeParseToolCalls(r.tool_calls) : undefined,
+          toolCallId: r.tool_call_id ?? undefined,
+          reasoning: r.reasoning ?? undefined,
+          timestamp: r.timestamp,
+          tokenCount: r.token_count ?? 0,
+        }));
+        try {
+          socket.send(JSON.stringify({ type: 'messages', items }));
+        } catch {
+          running = false;
+        }
+      };
+
+      const loop = async () => {
+        while (running) {
+          await pollOnce().catch(() => {});
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      };
+
+      socket.on('close', () => { running = false; });
+      socket.on('error', () => { running = false; });
+      loop();
+    },
+  );
+
+  // ---------- WS /ws/agents/:name/stats ----------
+  // Live stats deltas (polled every 5s).
+  app.get<{ Params: { name: string } }>(
+    '/ws/agents/:name/stats',
+    { websocket: true },
+    async (socket, request) => {
+      const { name } = request.params;
+      if (!(await agentExists(name))) {
+        socket.close(4004, 'agent not found');
+        return;
+      }
+
+      let running = true;
+      let lastKey = '';
+
+      const pollOnce = async () => {
+        const rows = await runSqliteJson<{
+          total_sessions: number;
+          total_messages: number;
+          total_tool_calls: number;
+          total_input_tokens: number;
+          total_output_tokens: number;
+          total_cost_usd: number;
+        }>(name, `
+          SELECT
+            COUNT(*) AS total_sessions,
+            COALESCE(SUM(message_count), 0) AS total_messages,
+            COALESCE(SUM(tool_call_count), 0) AS total_tool_calls,
+            COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
+            COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
+            COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) AS total_cost_usd
+          FROM sessions
+        `.trim());
+
+        const r = rows[0];
+        if (!r) return;
+        const key = `${r.total_sessions}|${r.total_messages}|${r.total_tool_calls}|${r.total_input_tokens}|${r.total_output_tokens}|${r.total_cost_usd}`;
+        if (key === lastKey) return;
+        lastKey = key;
+        try {
+          socket.send(JSON.stringify({ type: 'stats', data: r }));
+        } catch {
+          running = false;
+        }
+      };
+
+      const loop = async () => {
+        while (running) {
+          await pollOnce().catch(() => {});
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+      };
+
+      socket.on('close', () => { running = false; });
+      socket.on('error', () => { running = false; });
+      loop();
+    },
+  );
+
   // ---------- PATCH /api/agents/:name/cron/:jobId/toggle ----------
   // Toggle the `enabled` field on a cron job in ~/.hermes/cron/jobs.json
   app.patch<{ Params: { name: string; jobId: string } }>(
