@@ -5,6 +5,7 @@ import { AppShell } from './components/layout/AppShell';
 import { OrgDashboard } from './features/dashboard/OrgDashboard';
 import { AgentList } from './features/agents/AgentList';
 import { AgentWorkspace } from './features/agent/AgentWorkspace';
+import { SkillsLibrary } from './features/library/SkillsLibrary';
 import { NewDeploymentWizard } from './features/wizard/NewDeploymentWizard';
 import { JobFullScreen } from './features/jobs/JobFullScreen';
 import type { Route, Navigate } from './lib/types';
@@ -37,6 +38,9 @@ export function App() {
             navigate={navigate}
           />
         );
+
+      case 'library':
+        return <SkillsLibrary navigate={navigate} />;
 
       case 'new':
         return (

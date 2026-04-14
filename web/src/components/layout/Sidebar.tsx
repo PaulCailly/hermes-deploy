@@ -53,14 +53,13 @@ export function Sidebar({ route, navigate, agents }: SidebarProps) {
 
       {/* Shared Resources */}
       <div className="px-4 text-[10px] uppercase text-slate-500 tracking-widest mt-4 mb-1">Shared Resources</div>
-      <div className="px-4 py-2 text-[13px] text-slate-500 cursor-not-allowed">
+      <button
+        className={`px-4 py-2 text-left text-[13px] ${isActive('library')} hover:text-indigo-300 transition-colors`}
+        onClick={() => navigate({ page: 'library' })}
+      >
         <i className="fa-solid fa-book mr-2 text-[12px]" />
         Skills Library
-      </div>
-      <div className="px-4 py-2 text-[13px] text-slate-500 cursor-not-allowed">
-        <i className="fa-solid fa-gear mr-2 text-[12px]" />
-        Settings
-      </div>
+      </button>
 
       {/* Agent Shortcuts */}
       <div className="px-4 text-[10px] uppercase text-slate-500 tracking-widest mt-4 mb-1">Agents</div>

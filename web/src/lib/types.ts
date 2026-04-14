@@ -9,6 +9,7 @@ export type Route =
   | { page: 'dashboard' }
   | { page: 'agents' }
   | { page: 'agent'; name: string; tab: AgentTab }
+  | { page: 'library' }
   | { page: 'new' }
   | { page: 'job'; jobId: string };
 
