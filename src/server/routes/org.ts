@@ -208,9 +208,14 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    // Sort by presence of nextRunAt timestamp, else alphabetically
-    flat.sort((a, b) => a.nextRun.localeCompare(b.nextRun));
-    return flat.slice(0, 20);
+    // Partition: entries with a parseable ISO timestamp sort by date,
+    // the rest sort alphabetically. Timestamped entries come first.
+    const isTimestamp = (s: string) => !Number.isNaN(Date.parse(s)) && /^\d{4}-/.test(s);
+    const withTs = flat.filter((e) => isTimestamp(e.nextRun));
+    const withoutTs = flat.filter((e) => !isTimestamp(e.nextRun));
+    withTs.sort((a, b) => Date.parse(a.nextRun) - Date.parse(b.nextRun));
+    withoutTs.sort((a, b) => a.nextRun.localeCompare(b.nextRun));
+    return [...withTs, ...withoutTs].slice(0, 20);
   });
 
   // ---------- GET /api/org/skills ----------

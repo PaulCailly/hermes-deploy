@@ -22,6 +22,26 @@ export const HERMES_HOME = '/var/lib/hermes/.hermes';
 const SESSION_TTL_MS = 30_000;
 const sessionCache = new Map<string, CachedSession>();
 
+// Per-agent async mutex for serializing mutating operations (cron writes, etc.)
+const agentLocks = new Map<string, Promise<void>>();
+
+/** Serialize async work per agent name. Only one fn runs at a time per key. */
+export async function withAgentLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const prev = agentLocks.get(name) ?? Promise.resolve();
+  let releaseFn: () => void;
+  const next = new Promise<void>((r) => { releaseFn = r; });
+  agentLocks.set(name, next);
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    releaseFn!();
+    if (agentLocks.get(name) === next) {
+      agentLocks.delete(name);
+    }
+  }
+}
+
 export class AgentNotFoundError extends Error {
   constructor(name: string) {
     super(`Agent "${name}" not found`);
@@ -196,8 +216,16 @@ export async function listRemoteDir(name: string, path: string): Promise<string[
 /**
  * Write a file to the remote agent via SFTP. Expands `~/` to $HOME via SSH
  * before writing because SFTP doesn't expand tilde.
+ *
+ * When `atomic` is true (default), writes to a `.tmp` sibling first then
+ * renames, so readers never see a truncated file.
  */
-export async function writeRemoteFile(name: string, path: string, contents: string): Promise<void> {
+export async function writeRemoteFile(
+  name: string,
+  path: string,
+  contents: string,
+  opts?: { atomic?: boolean },
+): Promise<void> {
   const session = await getAgentSshSession(name);
   let resolvedPath = path;
   if (path.startsWith('~/')) {
@@ -205,7 +233,18 @@ export async function writeRemoteFile(name: string, path: string, contents: stri
     const home = res.stdout.trim();
     if (home) resolvedPath = `${home}/${path.slice(2)}`;
   }
-  await session.uploadFile(resolvedPath, contents);
+
+  const atomic = opts?.atomic !== false;
+  if (atomic) {
+    const tmpPath = `${resolvedPath}.tmp`;
+    await session.uploadFile(tmpPath, contents);
+    const mv = await session.exec(`mv ${shEscape(tmpPath)} ${shEscape(resolvedPath)}`);
+    if (mv.exitCode !== 0) {
+      throw new Error(`atomic rename failed: ${mv.stderr.trim()}`);
+    }
+  } else {
+    await session.uploadFile(resolvedPath, contents);
+  }
 }
 
 /** Run an arbitrary command on the agent. Returns exec result. */

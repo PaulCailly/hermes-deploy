@@ -6,9 +6,12 @@ import {
   readRemoteFile,
   writeRemoteFile,
   runRemoteCommand,
+  withAgentLock,
 } from '../agent-data-source.js';
 import { StateStore } from '../../state/store.js';
 import { getStatePaths } from '../../state/paths.js';
+
+const CRON_JOBS_PATH = '/var/lib/hermes/.hermes/cron/jobs.json';
 
 // ---------- Row shapes (match Hermes state.db schema) ----------
 
@@ -502,24 +505,28 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: 'invalid job id' });
       }
 
-      const data = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
-      if (!Array.isArray(data)) {
-        return reply.code(404).send({ error: 'jobs.json not found or invalid' });
-      }
+      return withAgentLock(name, async () => {
+        const data = await readRemoteJson<unknown>(name, CRON_JOBS_PATH);
+        if (!Array.isArray(data)) {
+          reply.code(404).send({ error: 'jobs.json not found or invalid' });
+          return;
+        }
 
-      const jobs = data as Array<Record<string, unknown>>;
-      const job = jobs.find((j) => String(j.id ?? '') === jobId);
-      if (!job) {
-        return reply.code(404).send({ error: 'job not found' });
-      }
-      job.enabled = !(job.enabled !== false);
+        const jobs = data as Array<Record<string, unknown>>;
+        const job = jobs.find((j) => String(j.id ?? '') === jobId);
+        if (!job) {
+          reply.code(404).send({ error: 'job not found' });
+          return;
+        }
+        job.enabled = !(job.enabled !== false);
 
-      try {
-        await writeRemoteFile(name, '/var/lib/hermes/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
-        return { ok: true, enabled: job.enabled };
-      } catch (e: unknown) {
-        return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
-      }
+        try {
+          await writeRemoteFile(name, CRON_JOBS_PATH, JSON.stringify(jobs, null, 2));
+          return { ok: true, enabled: job.enabled };
+        } catch (e: unknown) {
+          reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
+        }
+      });
     },
   );
 
@@ -535,30 +542,32 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: 'name and prompt required' });
     }
 
-    const existing = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
-    const jobs = Array.isArray(existing) ? (existing as Array<Record<string, unknown>>) : [];
+    return withAgentLock(name, async () => {
+      const existing = await readRemoteJson<unknown>(name, CRON_JOBS_PATH);
+      const jobs = Array.isArray(existing) ? (existing as Array<Record<string, unknown>>) : [];
 
-    const newId = genCronId();
-    const newJob: Record<string, unknown> = {
-      id: newId,
-      name: body.name,
-      prompt: body.prompt,
-      schedule: body.schedule ?? { kind: 'once', display: 'manual' },
-      enabled: body.enabled !== false,
-      state: 'scheduled',
-    };
-    if (typeof body.model === 'string') newJob.model = body.model;
-    if (typeof body.deliver === 'string') newJob.deliver = body.deliver;
-    if (Array.isArray(body.skills)) newJob.skills = body.skills;
+      const newId = genCronId();
+      const newJob: Record<string, unknown> = {
+        id: newId,
+        name: body.name,
+        prompt: body.prompt,
+        schedule: body.schedule ?? { kind: 'once', display: 'manual' },
+        enabled: body.enabled !== false,
+        state: 'scheduled',
+      };
+      if (typeof body.model === 'string') newJob.model = body.model;
+      if (typeof body.deliver === 'string') newJob.deliver = body.deliver;
+      if (Array.isArray(body.skills)) newJob.skills = body.skills;
 
-    jobs.push(newJob);
+      jobs.push(newJob);
 
-    try {
-      await writeRemoteFile(name, '/var/lib/hermes/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
-      return { ok: true, id: newId };
-    } catch (e: unknown) {
-      return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
-    }
+      try {
+        await writeRemoteFile(name, CRON_JOBS_PATH, JSON.stringify(jobs, null, 2));
+        return { ok: true, id: newId };
+      } catch (e: unknown) {
+        reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
+      }
+    });
   });
 
   // ---------- PUT /api/agents/:name/cron/:jobId ----------
@@ -575,29 +584,37 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       const body = req.body as Record<string, unknown> | null;
       if (!body) return reply.code(400).send({ error: 'body required' });
 
-      const existing = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
-      if (!Array.isArray(existing)) return reply.code(404).send({ error: 'jobs.json not found' });
+      return withAgentLock(name, async () => {
+        const existing = await readRemoteJson<unknown>(name, CRON_JOBS_PATH);
+        if (!Array.isArray(existing)) {
+          reply.code(404).send({ error: 'jobs.json not found' });
+          return;
+        }
 
-      const jobs = existing as Array<Record<string, unknown>>;
-      const job = jobs.find((j) => String(j.id ?? '') === jobId);
-      if (!job) return reply.code(404).send({ error: 'job not found' });
+        const jobs = existing as Array<Record<string, unknown>>;
+        const job = jobs.find((j) => String(j.id ?? '') === jobId);
+        if (!job) {
+          reply.code(404).send({ error: 'job not found' });
+          return;
+        }
 
-      if (typeof body.name === 'string') job.name = body.name;
-      if (typeof body.prompt === 'string') job.prompt = body.prompt;
-      if (body.schedule && typeof body.schedule === 'object') job.schedule = body.schedule;
-      if (typeof body.enabled === 'boolean') job.enabled = body.enabled;
-      if (typeof body.model === 'string') job.model = body.model;
-      if (body.model === null) delete job.model;
-      if (typeof body.deliver === 'string') job.deliver = body.deliver;
-      if (body.deliver === null) delete job.deliver;
-      if (Array.isArray(body.skills)) job.skills = body.skills;
+        if (typeof body.name === 'string') job.name = body.name;
+        if (typeof body.prompt === 'string') job.prompt = body.prompt;
+        if (body.schedule && typeof body.schedule === 'object') job.schedule = body.schedule;
+        if (typeof body.enabled === 'boolean') job.enabled = body.enabled;
+        if (typeof body.model === 'string') job.model = body.model;
+        if (body.model === null) delete job.model;
+        if (typeof body.deliver === 'string') job.deliver = body.deliver;
+        if (body.deliver === null) delete job.deliver;
+        if (Array.isArray(body.skills)) job.skills = body.skills;
 
-      try {
-        await writeRemoteFile(name, '/var/lib/hermes/.hermes/cron/jobs.json', JSON.stringify(jobs, null, 2));
-        return { ok: true };
-      } catch (e: unknown) {
-        return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
-      }
+        try {
+          await writeRemoteFile(name, CRON_JOBS_PATH, JSON.stringify(jobs, null, 2));
+          return { ok: true };
+        } catch (e: unknown) {
+          reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
+        }
+      });
     },
   );
 
@@ -611,19 +628,27 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: 'invalid job id' });
       }
 
-      const existing = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
-      if (!Array.isArray(existing)) return reply.code(404).send({ error: 'jobs.json not found' });
+      return withAgentLock(name, async () => {
+        const existing = await readRemoteJson<unknown>(name, CRON_JOBS_PATH);
+        if (!Array.isArray(existing)) {
+          reply.code(404).send({ error: 'jobs.json not found' });
+          return;
+        }
 
-      const jobs = existing as Array<Record<string, unknown>>;
-      const filtered = jobs.filter((j) => String(j.id ?? '') !== jobId);
-      if (filtered.length === jobs.length) return reply.code(404).send({ error: 'job not found' });
+        const jobs = existing as Array<Record<string, unknown>>;
+        const filtered = jobs.filter((j) => String(j.id ?? '') !== jobId);
+        if (filtered.length === jobs.length) {
+          reply.code(404).send({ error: 'job not found' });
+          return;
+        }
 
-      try {
-        await writeRemoteFile(name, '/var/lib/hermes/.hermes/cron/jobs.json', JSON.stringify(filtered, null, 2));
-        return { ok: true };
-      } catch (e: unknown) {
-        return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
-      }
+        try {
+          await writeRemoteFile(name, CRON_JOBS_PATH, JSON.stringify(filtered, null, 2));
+          return { ok: true };
+        } catch (e: unknown) {
+          reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
+        }
+      });
     },
   );
 }
