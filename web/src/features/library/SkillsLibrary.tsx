@@ -56,6 +56,20 @@ export function SkillsLibrary({ navigate }: SkillsLibraryProps) {
         <div className="flex-1 overflow-y-auto">
           {skillsQ.isLoading ? (
             <div className="text-slate-500 text-sm text-center py-6">Loading…</div>
+          ) : skillsQ.isError ? (
+            <div className="text-red-400 text-sm text-center py-6 px-3">
+              <i className="fa-solid fa-triangle-exclamation text-2xl mb-2 block text-red-500" />
+              Failed to load skills
+              <div className="text-[11px] text-slate-500 mt-1 break-words">
+                {(skillsQ.error as Error)?.message ?? 'unknown error'}
+              </div>
+              <button
+                className="mt-3 text-[11px] px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                onClick={() => skillsQ.refetch()}
+              >
+                Retry
+              </button>
+            </div>
           ) : categories.length === 0 ? (
             <div className="text-slate-500 text-sm text-center py-6">
               <i className="fa-solid fa-book text-2xl mb-2 block text-slate-600" />
@@ -155,7 +169,11 @@ export function SkillsLibrary({ navigate }: SkillsLibraryProps) {
           </>
         ) : (
           <div className="flex items-center justify-center h-full text-slate-500 text-sm">
-            {categories.length === 0 && !skillsQ.isLoading ? 'No skills installed on any agent' : 'Select a skill'}
+            {skillsQ.isError
+              ? 'Failed to load skills — retry from the sidebar'
+              : categories.length === 0 && !skillsQ.isLoading
+                ? 'No skills installed on any agent'
+                : 'Select a skill'}
           </div>
         )}
       </div>

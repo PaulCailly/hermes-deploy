@@ -309,26 +309,56 @@ export function useLiveAgentMessages(
       setConnected(false);
       return;
     }
-    const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}/messages`);
-    wsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
-    ws.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.type === 'messages' && Array.isArray(data.items)) {
-          setMessages(data.items as AgentMessage[]);
+    let cancelled = false;
+    let attempt = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      if (cancelled) return;
+      const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}/messages`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (cancelled) { ws.close(); return; }
+        attempt = 0; // reset backoff on successful connect
+        setConnected(true);
+      };
+      ws.onclose = () => {
+        if (cancelled) return;
+        if (wsRef.current !== ws) return;
+        setConnected(false);
+        // Reconnect with exponential backoff (1s, 2s, 4s, 8s, capped at 30s)
+        const delay = Math.min(1000 * Math.pow(2, attempt), 30_000);
+        attempt++;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+      ws.onerror = () => {
+        if (wsRef.current === ws) setConnected(false);
+      };
+      ws.onmessage = (e) => {
+        if (wsRef.current !== ws) return;
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'messages' && Array.isArray(data.items)) {
+            setMessages(data.items as AgentMessage[]);
+          }
+        } catch {
+          // ignore malformed frame
         }
-      } catch {
-        // ignore malformed frame
-      }
+      };
     };
 
+    connect();
+
     return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      const ws = wsRef.current;
       wsRef.current = null;
-      try { ws.close(); } catch { /* ignore */ }
+      if (ws) {
+        try { ws.close(); } catch { /* ignore */ }
+      }
     };
   }, [name, sessionId, enabled]);
 
@@ -345,36 +375,70 @@ export function useLiveAgentStats(name: string, enabled: boolean): {
 } {
   const [data, setData] = useState<Partial<AgentStats> | undefined>(undefined);
   const [connected, setConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     if (!enabled) {
       setConnected(false);
       return;
     }
-    const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/stats`);
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'stats' && msg.data) {
-          setData({
-            totalSessions: msg.data.total_sessions,
-            totalMessages: msg.data.total_messages,
-            totalToolCalls: msg.data.total_tool_calls,
-            totalInputTokens: msg.data.total_input_tokens,
-            totalOutputTokens: msg.data.total_output_tokens,
-            totalCostUSD: msg.data.total_cost_usd,
-          });
+    let cancelled = false;
+    let attempt = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      if (cancelled) return;
+      const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/stats`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (cancelled) { ws.close(); return; }
+        attempt = 0;
+        setConnected(true);
+      };
+      ws.onclose = () => {
+        if (cancelled) return;
+        if (wsRef.current !== ws) return;
+        setConnected(false);
+        const delay = Math.min(1000 * Math.pow(2, attempt), 30_000);
+        attempt++;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+      ws.onerror = () => {
+        if (wsRef.current === ws) setConnected(false);
+      };
+      ws.onmessage = (e) => {
+        if (wsRef.current !== ws) return;
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'stats' && msg.data) {
+            setData({
+              totalSessions: msg.data.total_sessions,
+              totalMessages: msg.data.total_messages,
+              totalToolCalls: msg.data.total_tool_calls,
+              totalInputTokens: msg.data.total_input_tokens,
+              totalOutputTokens: msg.data.total_output_tokens,
+              totalCostUSD: msg.data.total_cost_usd,
+            });
+          }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
-      }
+      };
     };
 
-    return () => { try { ws.close(); } catch { /* ignore */ } };
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
+        try { ws.close(); } catch { /* ignore */ }
+      }
+    };
   }, [name, enabled]);
 
   return { data, connected };

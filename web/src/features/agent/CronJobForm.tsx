@@ -21,6 +21,7 @@ export function CronJobForm({ initial, onCancel, onSubmit, busy, error }: CronJo
   const [scheduleDisplay, setScheduleDisplay] = useState(initial?.schedule.display ?? '');
   const [scheduleExpression, setScheduleExpression] = useState(initial?.schedule.expression ?? '');
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
+  const [skillsStr, setSkillsStr] = useState((initial?.skills ?? []).join(', '));
 
   const canSubmit = jobName.trim().length > 0 && prompt.trim().length > 0 && !busy;
 
@@ -30,11 +31,17 @@ export function CronJobForm({ initial, onCancel, onSubmit, busy, error }: CronJo
     if (scheduleDisplay.trim()) schedule.display = scheduleDisplay.trim();
     if (scheduleExpression.trim()) schedule.expression = scheduleExpression.trim();
 
+    const skills = skillsStr
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
     onSubmit({
       name: jobName.trim(),
       prompt: prompt.trim(),
       schedule,
       enabled,
+      skills,
       ...(model.trim() ? { model: model.trim() } : {}),
       ...(deliver.trim() ? { deliver: deliver.trim() } : {}),
     });
@@ -125,6 +132,15 @@ export function CronJobForm({ initial, onCancel, onSubmit, busy, error }: CronJo
               />
             </Field>
           </div>
+
+          <Field label="Skills (optional, comma-separated)">
+            <input
+              className="w-full bg-[#0d1117] border border-[#2a2d3a] rounded px-2.5 py-1.5 text-sm text-slate-200 outline-none focus:border-indigo-500 font-mono"
+              placeholder="research, email, calendar"
+              value={skillsStr}
+              onChange={(e) => setSkillsStr(e.target.value)}
+            />
+          </Field>
 
           <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
             <input

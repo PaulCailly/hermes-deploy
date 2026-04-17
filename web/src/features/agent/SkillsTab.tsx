@@ -57,7 +57,10 @@ export function SkillsTab({ name }: SkillsTabProps) {
   }
 
   function startEditing() {
-    setEditBuffer(fileQ.data ?? '');
+    // Don't allow editing until the remote file has finished loading —
+    // otherwise the buffer seeds from '' and a save would overwrite with blank.
+    if (fileQ.isLoading || fileQ.data === undefined) return;
+    setEditBuffer(fileQ.data);
     setEditing(true);
     setSaveError(null);
   }
@@ -154,8 +157,10 @@ export function SkillsTab({ name }: SkillsTabProps) {
               </div>
               {canEdit && !editing && selectedFile && (
                 <button
-                  className="text-[11px] px-2.5 py-1.5 rounded bg-[#1e2030] hover:bg-[#26283a] text-slate-300 transition-colors"
+                  className="text-[11px] px-2.5 py-1.5 rounded bg-[#1e2030] hover:bg-[#26283a] disabled:opacity-50 disabled:cursor-not-allowed text-slate-300 transition-colors"
                   onClick={startEditing}
+                  disabled={fileQ.isLoading || fileQ.data === undefined}
+                  title={fileQ.isLoading ? 'Loading file…' : 'Edit file'}
                 >
                   <i className="fa-solid fa-pen-to-square mr-1.5" />Edit
                 </button>

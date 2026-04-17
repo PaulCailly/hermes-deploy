@@ -39,11 +39,14 @@ export function InfraTab({ name, status, navigate }: InfraTabProps) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [confirmDestroy, setConfirmDestroy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   async function runAction(action: 'update' | 'destroy') {
+    if (submitting) return;
+    setSubmitting(true);
     setError('');
     try {
       const body = action === 'destroy' ? { confirm: true } : {};
@@ -54,6 +57,8 @@ export function InfraTab({ name, status, navigate }: InfraTabProps) {
       setJobId(res.jobId);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Action failed');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -112,10 +117,11 @@ export function InfraTab({ name, status, navigate }: InfraTabProps) {
           </h3>
           <p className="text-xs text-slate-500 mb-3">Push config changes to the running instance.</p>
           <button
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded transition-colors"
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm rounded transition-colors"
             onClick={() => runAction('update')}
+            disabled={submitting || !!jobId}
           >
-            Update
+            {submitting ? <><i className="fa-solid fa-spinner fa-spin mr-1" />Starting…</> : 'Update'}
           </button>
         </div>
         <div className="bg-[#161822] border border-[#2a2d3a] rounded-lg p-4">
@@ -125,15 +131,17 @@ export function InfraTab({ name, status, navigate }: InfraTabProps) {
           <p className="text-xs text-slate-500 mb-3">Tear down all cloud resources for this agent.</p>
           {confirmDestroy ? (
             <button
-              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded transition-colors"
+              className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm rounded transition-colors"
               onClick={() => { setConfirmDestroy(false); runAction('destroy'); }}
+              disabled={submitting || !!jobId}
             >
-              Confirm Destroy
+              {submitting ? <><i className="fa-solid fa-spinner fa-spin mr-1" />Starting…</> : 'Confirm Destroy'}
             </button>
           ) : (
             <button
-              className="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 text-sm rounded transition-colors"
+              className="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed text-red-400 text-sm rounded transition-colors"
               onClick={startDestroy}
+              disabled={submitting || !!jobId}
             >
               Destroy
             </button>

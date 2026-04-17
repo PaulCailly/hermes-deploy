@@ -180,12 +180,19 @@ export async function runSqliteJson<T>(name: string, sql: string): Promise<T[]> 
   }
 }
 
-/** Read a remote file. Returns contents or null if the file does not exist. */
+/** Read a remote file. Returns contents (may be empty) or null if the file does not exist. */
 export async function readRemoteFile(name: string, path: string): Promise<string | null> {
   try {
     const session = await getAgentSshSession(name);
-    const res = await session.exec(`test -f ${shEscape(path)} && cat ${shEscape(path)} || true`);
-    return res.stdout || null;
+    // Use `test -f` exit code to distinguish missing from empty. If the file
+    // exists we cat it; otherwise emit a sentinel line and the JS side maps
+    // that to null. Sentinel is a byte sequence unlikely to appear verbatim.
+    const SENTINEL = '__HERMES_FILE_MISSING__';
+    const res = await session.exec(
+      `if test -f ${shEscape(path)}; then cat ${shEscape(path)}; else printf '%s' ${shEscape(SENTINEL)}; fi`,
+    );
+    if (res.stdout === SENTINEL) return null;
+    return res.stdout;
   } catch {
     return null;
   }

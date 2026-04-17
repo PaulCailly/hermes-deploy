@@ -167,15 +167,26 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
 
-    const limit = Math.min(parseInt(req.query.limit ?? '50', 10) || 50, 500);
+    // Clamp to [1, 500]. Negative/zero/NaN/undefined all fall back to default 50.
+    const parsedLimit = parseInt(req.query.limit ?? '50', 10);
+    const limit = !Number.isFinite(parsedLimit) || parsedLimit <= 0
+      ? 50
+      : Math.min(parsedLimit, 500);
 
-    // Build WHERE clause with SQL-escaped search term for title
-    let whereClause = '';
+    // Build WHERE clauses (SQL-escape LIKE search; whitelist platform).
+    const clauses: string[] = [];
     if (req.query.q) {
-      // Escape single quotes and % for LIKE — keep the query simple
       const q = req.query.q.replace(/'/g, "''").replace(/\\/g, '\\\\');
-      whereClause = `WHERE title LIKE '%${q}%'`;
+      clauses.push(`title LIKE '%${q}%'`);
     }
+    if (req.query.platform && req.query.platform !== 'all') {
+      // Only allow alphanumeric platform names — defense in depth against injection.
+      if (/^[A-Za-z0-9_-]+$/.test(req.query.platform)) {
+        const p = req.query.platform.toLowerCase().replace(/'/g, "''");
+        clauses.push(`LOWER(source) = '${p}'`);
+      }
+    }
+    const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
 
     const rows = await runSqliteJson<SessionRow>(name, `
       SELECT ${SESSION_COLUMNS}
@@ -185,11 +196,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       LIMIT ${limit}
     `.trim());
 
-    let sessions = rows.map(rowToSession);
-    if (req.query.platform && req.query.platform !== 'all') {
-      sessions = sessions.filter((s) => s.source.toLowerCase() === req.query.platform!.toLowerCase());
-    }
-    return sessions;
+    return rows.map(rowToSession);
   });
 
   // ---------- GET /api/agents/:name/sessions/:sid/messages ----------
@@ -269,8 +276,11 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ---------- PUT /api/agents/:name/skills/:category/:skill/:file ----------
-  // Write a skill file. Body is raw text/plain. Only allows editing files
-  // in categories we found during list (no arbitrary file writes).
+  // Write an existing skill file with an editable extension. Only allows
+  // modifying files that already exist under the enumerated skill path
+  // (prevents arbitrary file creation) and only editable extensions
+  // (prevents overwriting executable scripts).
+  const EDITABLE_SKILL_EXTS = ['.md', '.txt', '.yaml', '.yml', '.json'];
   app.put<{
     Params: { name: string; category: string; skill: string; file: string };
   }>(
@@ -278,9 +288,22 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const { name, category, skill, file } = req.params;
       if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
-      if ([category, skill, file].some((p) => p.includes('..') || p.includes('/'))) {
+      if ([category, skill, file].some((p) => p.includes('..') || p.includes('/') || p.startsWith('.'))) {
         return reply.code(400).send({ error: 'invalid path' });
       }
+      const lower = file.toLowerCase();
+      if (!EDITABLE_SKILL_EXTS.some((ext) => lower.endsWith(ext))) {
+        return reply.code(400).send({ error: `file extension not editable (allowed: ${EDITABLE_SKILL_EXTS.join(', ')})` });
+      }
+
+      // Verify the file already exists under the skill directory. We only
+      // permit edits to files enumerated by the skill listing — no new-file
+      // creation via this endpoint.
+      const existingFiles = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${category}/${skill}`);
+      if (!existingFiles.includes(file)) {
+        return reply.code(404).send({ error: 'file not found in skill directory' });
+      }
+
       // Accept body as text (Fastify default is JSON; treat body as string)
       let content: string;
       if (typeof req.body === 'string') {

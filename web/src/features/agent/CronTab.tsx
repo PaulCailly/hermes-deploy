@@ -34,6 +34,10 @@ export function CronTab({ name }: CronTabProps) {
 
   const jobs = jobsQ.data ?? [];
   const enabledCount = jobs.filter((j) => j.enabled).length;
+  // Serialize all cron writes client-side too — the server mutex handles
+  // correctness but blocking the UI avoids flashing stale state during
+  // concurrent clicks.
+  const isMutating = toggleM.isPending || createM.isPending || updateM.isPending || deleteM.isPending;
 
   async function handleCreate(input: CronJobInput) {
     setFormError(null);
@@ -70,8 +74,9 @@ export function CronTab({ name }: CronTabProps) {
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-slate-500">{jobs.length} jobs · {enabledCount} enabled</span>
           <button
-            className="text-[11px] px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+            className="text-[11px] px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
             onClick={() => { setCreating(true); setFormError(null); }}
+            disabled={isMutating}
           >
             <i className="fa-solid fa-plus mr-1" />New Job
           </button>
@@ -121,13 +126,13 @@ export function CronTab({ name }: CronTabProps) {
                     {isDisabled ? 'disabled' : job.state}
                   </span>
                   <button
-                    className={`text-[10px] px-2 py-1 rounded transition-colors disabled:opacity-50 ${
+                    className={`text-[10px] px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       isDisabled
                         ? 'text-green-400 bg-green-500/10 hover:bg-green-500/20'
                         : 'text-slate-400 bg-[#1e2030] hover:bg-[#26283a]'
                     }`}
                     onClick={() => toggleM.mutate(job.id)}
-                    disabled={busyToggle || !job.id}
+                    disabled={isMutating || !job.id}
                     title={isDisabled ? 'Enable job' : 'Disable job'}
                   >
                     {busyToggle ? (
@@ -139,16 +144,17 @@ export function CronTab({ name }: CronTabProps) {
                     )}
                   </button>
                   <button
-                    className="text-[10px] px-2 py-1 rounded text-slate-400 bg-[#1e2030] hover:bg-[#26283a] transition-colors"
+                    className="text-[10px] px-2 py-1 rounded text-slate-400 bg-[#1e2030] hover:bg-[#26283a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     onClick={() => { setEditing(job); setFormError(null); }}
+                    disabled={isMutating}
                     title="Edit job"
                   >
                     <i className="fa-solid fa-pen-to-square" />
                   </button>
                   <button
-                    className="text-[10px] px-2 py-1 rounded text-red-400 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+                    className="text-[10px] px-2 py-1 rounded text-red-400 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     onClick={() => setConfirmDelete(job.id)}
-                    disabled={busyDelete}
+                    disabled={isMutating}
                     title="Delete job"
                   >
                     {busyDelete ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-trash" />}
@@ -179,10 +185,11 @@ export function CronTab({ name }: CronTabProps) {
                   <div className="mt-2 flex items-center gap-2 p-2 bg-red-500/5 border border-red-500/20 rounded">
                     <span className="text-[11px] text-red-400 flex-1">Delete this job?</span>
                     <button
-                      className="text-[10px] px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white transition-colors"
+                      className="text-[10px] px-2 py-1 rounded bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
                       onClick={() => handleDelete(job.id)}
+                      disabled={isMutating}
                     >
-                      Delete
+                      {busyDelete ? <i className="fa-solid fa-spinner fa-spin" /> : 'Delete'}
                     </button>
                     <button
                       className="text-[10px] px-2 py-1 rounded text-slate-400 hover:text-slate-200 transition-colors"
