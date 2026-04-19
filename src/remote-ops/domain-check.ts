@@ -24,8 +24,12 @@ export async function runRemoteDomainChecks(
   const nginxActive = await session.exec('systemctl is-active nginx');
   const isActive = nginxActive.exitCode === 0 && nginxActive.stdout.trim() === 'active';
 
-  // 2. nginx config test
-  const nginxTest = await session.exec('nginx -t 2>&1');
+  // 2. nginx config test — on NixOS, nginx isn't on PATH. Extract the
+  // binary path from the systemd unit's ExecReload line.
+  const nginxTest = await session.exec(
+    'NGINX_BIN=$(systemctl cat nginx.service 2>/dev/null | grep -oP "(?<=ExecReload=)\\S+nginx" | head -1); ' +
+    '[ -n "$NGINX_BIN" ] && $NGINX_BIN -t 2>&1 || nginx -t 2>&1',
+  );
   const configValid = nginxTest.exitCode === 0;
 
   // 3. TLS cert expiry — read from the ACME cert path on NixOS
