@@ -44,6 +44,11 @@ export interface CachixConfig {
   public_key: string;
 }
 
+export interface DomainConfig {
+  name: string;
+  upstream_port: number;
+}
+
 /**
  * configuration.nix is the host-level NixOS config. It imports the
  * cloud-specific virtualisation module so the instance boots correctly:
@@ -64,7 +69,12 @@ const VIRT_MODULE: Record<string, string> = {
   gcp: 'google-compute-image.nix',
 };
 
-export function configurationNix(provider: 'aws' | 'gcp', sshPublicKey?: string, cachix?: CachixConfig): string {
+export function configurationNix(
+  provider: 'aws' | 'gcp',
+  sshPublicKey?: string,
+  cachix?: CachixConfig,
+  domain?: DomainConfig,
+): string {
   const virtModule = VIRT_MODULE[provider];
   const substitutersBlock = cachix
     ? `
@@ -77,6 +87,32 @@ export function configurationNix(provider: 'aws' | 'gcp', sshPublicKey?: string,
       "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
       "${cachix.public_key}"
     ];
+  };
+`
+    : '';
+
+  const domainBlock = domain
+    ? `
+  # --- Domain: nginx reverse proxy + Let's Encrypt TLS ---
+  networking.firewall.allowedTCPPorts = [ 80 443 ];
+
+  security.acme = {
+    acceptTerms = true;
+    defaults.email = "acme@${domain.name}";
+  };
+
+  services.nginx = {
+    enable = true;
+    recommendedProxySettings = true;
+    recommendedTlsSettings = true;
+    virtualHosts."${domain.name}" = {
+      enableACME = true;
+      forceSSL = true;
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:${domain.upstream_port}";
+        proxyWebsockets = true;
+      };
+    };
   };
 `
     : '';
@@ -144,6 +180,6 @@ ${provider === 'gcp' ? `
       group = config.services.hermes-agent.group;
     };
   };
-}
+${domainBlock}}
 `;
 }

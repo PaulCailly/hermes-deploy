@@ -1,8 +1,11 @@
 import type { HermesTomlConfig } from '../schema/hermes-toml.js';
-import { configurationNix, FLAKE_NIX } from './templates.js';
+import { configurationNix, FLAKE_NIX, type DomainConfig } from './templates.js';
 
 export function generateConfigurationNix(config: HermesTomlConfig, sshPublicKey?: string): string {
-  return configurationNix(config.cloud.provider, sshPublicKey, config.hermes.cachix);
+  const domain: DomainConfig | undefined = config.domain
+    ? { name: config.domain.name, upstream_port: config.domain.upstream_port }
+    : undefined;
+  return configurationNix(config.cloud.provider, sshPublicKey, config.hermes.cachix, domain);
 }
 
 export function generateFlakeNix(): string {
