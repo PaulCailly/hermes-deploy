@@ -27,5 +27,8 @@ export function ModelIcon({ model, size = 18 }: ModelIconProps) {
   if (lower.includes('gpt') || lower.includes('openai')) {
     return <OpenAILogo size={size} />;
   }
+  if (lower.includes('gemini') || lower.includes('google')) {
+    return <i className="fa-brands fa-google" style={{ fontSize: size, color: '#4285f4' }} />;
+  }
   return <i className="fa-solid fa-robot" style={{ fontSize: size, color: '#818cf8' }} />;
 }

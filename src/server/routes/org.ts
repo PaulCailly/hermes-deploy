@@ -2,10 +2,23 @@ import type { FastifyInstance } from 'fastify';
 import { StateStore } from '../../state/store.js';
 import { getStatePaths } from '../../state/paths.js';
 import { runSqliteJson, readRemoteJson } from '../agent-data-source.js';
+import { estimateCost } from '../model-pricing.js';
 
 // ---------- Per-agent row shapes ----------
 
-interface AgentStatsRow {
+interface AgentSessionRow {
+  model: string | null;
+  started_at: string;
+  ended_at: string | null;
+  message_count: number | null;
+  tool_call_count: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  actual_cost_usd: number | null;
+  estimated_cost_usd: number | null;
+}
+
+interface AgentStatsComputed {
   total_sessions: number;
   total_messages: number;
   total_tool_calls: number;
@@ -13,7 +26,6 @@ interface AgentStatsRow {
   total_output_tokens: number;
   total_cost_usd: number;
   today_sessions: number;
-  today_messages: number;
   today_cost_usd: number;
   active_sessions: number;
 }
@@ -27,6 +39,8 @@ interface RecentSessionRow {
   estimated_cost_usd: number | null;
   actual_cost_usd: number | null;
   model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
 }
 
 interface CronJobJson {
@@ -37,23 +51,54 @@ interface CronJobJson {
   schedule?: { display?: string; expression?: string; kind?: string };
 }
 
-const STATS_SQL = `
-  SELECT
-    COUNT(*) AS total_sessions,
-    COALESCE(SUM(message_count), 0) AS total_messages,
-    COALESCE(SUM(tool_call_count), 0) AS total_tool_calls,
-    COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
-    COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
-    COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) AS total_cost_usd,
-    SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN 1 ELSE 0 END) AS today_sessions,
-    COALESCE(SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN message_count ELSE 0 END), 0) AS today_messages,
-    COALESCE(SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN COALESCE(actual_cost_usd, estimated_cost_usd, 0) ELSE 0 END), 0) AS today_cost_usd,
-    SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) AS active_sessions
+const SESSIONS_SQL = `
+  SELECT model, started_at, ended_at, message_count, tool_call_count,
+         input_tokens, output_tokens, actual_cost_usd, estimated_cost_usd
   FROM sessions
 `.trim();
 
+function computeAgentStats(sessions: AgentSessionRow[]): AgentStatsComputed {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let total_sessions = 0, total_messages = 0, total_tool_calls = 0;
+  let total_input_tokens = 0, total_output_tokens = 0, total_cost_usd = 0;
+  let today_sessions = 0, today_cost_usd = 0, active_sessions = 0;
+
+  for (const s of sessions) {
+    total_sessions++;
+    total_messages += s.message_count ?? 0;
+    total_tool_calls += s.tool_call_count ?? 0;
+    total_input_tokens += s.input_tokens ?? 0;
+    total_output_tokens += s.output_tokens ?? 0;
+    if (!s.ended_at) active_sessions++;
+
+    const cost = s.actual_cost_usd ?? s.estimated_cost_usd
+      ?? estimateCost(s.model, s.input_tokens ?? 0, s.output_tokens ?? 0);
+    total_cost_usd += cost;
+
+    const sessionDate = new Date(
+      typeof s.started_at === 'string' && s.started_at.length > 10
+        ? s.started_at
+        : Number(s.started_at) * 1000,
+    ).toISOString().slice(0, 10);
+    if (sessionDate === todayStr) {
+      today_sessions++;
+      today_cost_usd += cost;
+    }
+  }
+
+  return {
+    total_sessions, total_messages, total_tool_calls,
+    total_input_tokens, total_output_tokens,
+    total_cost_usd: Math.round(total_cost_usd * 1_000_000) / 1_000_000,
+    today_sessions,
+    today_cost_usd: Math.round(today_cost_usd * 1_000_000) / 1_000_000,
+    active_sessions,
+  };
+}
+
 const RECENT_SESSIONS_SQL = `
-  SELECT id, title, source, started_at, ended_at, estimated_cost_usd, actual_cost_usd, model
+  SELECT id, title, source, started_at, ended_at, estimated_cost_usd, actual_cost_usd, model,
+         input_tokens, output_tokens
   FROM sessions
   ORDER BY started_at DESC
   LIMIT 20
@@ -72,8 +117,8 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
     const names = await listAgents();
     const results = await Promise.allSettled(
       names.map(async (name) => {
-        const rows = await runSqliteJson<AgentStatsRow>(name, STATS_SQL);
-        return { name, stats: rows[0] ?? null };
+        const rows = await runSqliteJson<AgentSessionRow>(name, SESSIONS_SQL);
+        return { name, stats: computeAgentStats(rows) };
       }),
     );
 
@@ -96,7 +141,7 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
     let activeSessions = 0;
 
     for (const r of results) {
-      if (r.status !== 'fulfilled' || !r.value.stats) continue;
+      if (r.status !== 'fulfilled') continue;
       const s = r.value.stats;
       totalSessions += s.total_sessions ?? 0;
       totalMessages += s.total_messages ?? 0;
@@ -166,7 +211,8 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
           source: row.source ?? 'unknown',
           startedAt: row.started_at,
           active: !row.ended_at,
-          estimatedCostUSD: row.actual_cost_usd ?? row.estimated_cost_usd ?? 0,
+          estimatedCostUSD: row.actual_cost_usd ?? row.estimated_cost_usd
+            ?? estimateCost(row.model, row.input_tokens ?? 0, row.output_tokens ?? 0),
           model: row.model ?? '',
         });
       }

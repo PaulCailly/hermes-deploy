@@ -11,6 +11,8 @@ import {
 import { StateStore } from '../../state/store.js';
 import { getStatePaths } from '../../state/paths.js';
 
+import { estimateCost } from '../model-pricing.js';
+
 const CRON_JOBS_PATH = '/var/lib/hermes/.hermes/cron/jobs.json';
 
 // ---------- Row shapes (match Hermes state.db schema) ----------
@@ -86,7 +88,8 @@ function rowToSession(r: SessionRow): SessionDto {
     cacheReadTokens: r.cache_read_tokens ?? 0,
     cacheWriteTokens: r.cache_write_tokens ?? 0,
     reasoningTokens: r.reasoning_tokens ?? 0,
-    estimatedCostUSD: r.actual_cost_usd ?? r.estimated_cost_usd ?? 0,
+    estimatedCostUSD: r.actual_cost_usd ?? r.estimated_cost_usd
+      ?? estimateCost(r.model, r.input_tokens ?? 0, r.output_tokens ?? 0),
   };
 }
 
@@ -112,50 +115,69 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
 
-    const rows = await runSqliteJson<{
-      total_sessions: number;
-      total_messages: number;
-      total_tool_calls: number;
-      total_input_tokens: number;
-      total_output_tokens: number;
-      total_cache_read_tokens: number;
-      total_cache_write_tokens: number;
-      total_reasoning_tokens: number;
-      total_cost_usd: number;
-      today_sessions: number;
-      today_messages: number;
-      today_cost_usd: number;
+    // Fetch per-session data so we can apply fallback pricing when
+    // hermes-agent didn't record cost (e.g. Gemini models).
+    const sessions = await runSqliteJson<{
+      model: string | null;
+      started_at: string;
+      message_count: number | null;
+      tool_call_count: number | null;
+      input_tokens: number | null;
+      output_tokens: number | null;
+      cache_read_tokens: number | null;
+      cache_write_tokens: number | null;
+      reasoning_tokens: number | null;
+      actual_cost_usd: number | null;
+      estimated_cost_usd: number | null;
     }>(name, `
-      SELECT
-        COUNT(*) AS total_sessions,
-        COALESCE(SUM(message_count), 0) AS total_messages,
-        COALESCE(SUM(tool_call_count), 0) AS total_tool_calls,
-        COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
-        COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
-        COALESCE(SUM(cache_read_tokens), 0) AS total_cache_read_tokens,
-        COALESCE(SUM(cache_write_tokens), 0) AS total_cache_write_tokens,
-        COALESCE(SUM(reasoning_tokens), 0) AS total_reasoning_tokens,
-        COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) AS total_cost_usd,
-        SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN 1 ELSE 0 END) AS today_sessions,
-        COALESCE(SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN message_count ELSE 0 END), 0) AS today_messages,
-        COALESCE(SUM(CASE WHEN date(started_at, 'unixepoch') = date('now') THEN COALESCE(actual_cost_usd, estimated_cost_usd, 0) ELSE 0 END), 0) AS today_cost_usd
+      SELECT model, started_at, message_count, tool_call_count,
+             input_tokens, output_tokens, cache_read_tokens,
+             cache_write_tokens, reasoning_tokens,
+             actual_cost_usd, estimated_cost_usd
       FROM sessions
     `.trim());
 
-    const r = rows[0] ?? null;
+    let totalSessions = 0, totalMessages = 0, totalToolCalls = 0;
+    let totalInputTokens = 0, totalOutputTokens = 0;
+    let totalCacheReadTokens = 0, totalCacheWriteTokens = 0, totalReasoningTokens = 0;
+    let totalCostUSD = 0;
+    let todaySessions = 0, todayMessages = 0, todayCostUSD = 0;
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    for (const s of sessions) {
+      totalSessions++;
+      totalMessages += s.message_count ?? 0;
+      totalToolCalls += s.tool_call_count ?? 0;
+      totalInputTokens += s.input_tokens ?? 0;
+      totalOutputTokens += s.output_tokens ?? 0;
+      totalCacheReadTokens += s.cache_read_tokens ?? 0;
+      totalCacheWriteTokens += s.cache_write_tokens ?? 0;
+      totalReasoningTokens += s.reasoning_tokens ?? 0;
+
+      const cost = s.actual_cost_usd ?? s.estimated_cost_usd
+        ?? estimateCost(s.model, s.input_tokens ?? 0, s.output_tokens ?? 0);
+      totalCostUSD += cost;
+
+      const sessionDate = new Date(
+        typeof s.started_at === 'string' && s.started_at.length > 10
+          ? s.started_at
+          : Number(s.started_at) * 1000,
+      ).toISOString().slice(0, 10);
+      if (sessionDate === todayStr) {
+        todaySessions++;
+        todayMessages += s.message_count ?? 0;
+        todayCostUSD += cost;
+      }
+    }
+
     return {
-      totalSessions: r?.total_sessions ?? 0,
-      totalMessages: r?.total_messages ?? 0,
-      totalToolCalls: r?.total_tool_calls ?? 0,
-      totalInputTokens: r?.total_input_tokens ?? 0,
-      totalOutputTokens: r?.total_output_tokens ?? 0,
-      totalCacheReadTokens: r?.total_cache_read_tokens ?? 0,
-      totalCacheWriteTokens: r?.total_cache_write_tokens ?? 0,
-      totalReasoningTokens: r?.total_reasoning_tokens ?? 0,
-      totalCostUSD: r?.total_cost_usd ?? 0,
-      todaySessions: r?.today_sessions ?? 0,
-      todayMessages: r?.today_messages ?? 0,
-      todayCostUSD: r?.today_cost_usd ?? 0,
+      totalSessions, totalMessages, totalToolCalls,
+      totalInputTokens, totalOutputTokens,
+      totalCacheReadTokens, totalCacheWriteTokens, totalReasoningTokens,
+      totalCostUSD: Math.round(totalCostUSD * 1_000_000) / 1_000_000,
+      todaySessions, todayMessages,
+      todayCostUSD: Math.round(todayCostUSD * 1_000_000) / 1_000_000,
     };
   });
 
@@ -475,26 +497,35 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       let lastKey = '';
 
       const pollOnce = async () => {
-        const rows = await runSqliteJson<{
-          total_sessions: number;
-          total_messages: number;
-          total_tool_calls: number;
-          total_input_tokens: number;
-          total_output_tokens: number;
-          total_cost_usd: number;
+        const sessions = await runSqliteJson<{
+          model: string | null;
+          message_count: number | null;
+          tool_call_count: number | null;
+          input_tokens: number | null;
+          output_tokens: number | null;
+          actual_cost_usd: number | null;
+          estimated_cost_usd: number | null;
         }>(name, `
-          SELECT
-            COUNT(*) AS total_sessions,
-            COALESCE(SUM(message_count), 0) AS total_messages,
-            COALESCE(SUM(tool_call_count), 0) AS total_tool_calls,
-            COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
-            COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
-            COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) AS total_cost_usd
+          SELECT model, message_count, tool_call_count,
+                 input_tokens, output_tokens,
+                 actual_cost_usd, estimated_cost_usd
           FROM sessions
         `.trim());
 
-        const r = rows[0];
-        if (!r) return;
+        let total_sessions = 0, total_messages = 0, total_tool_calls = 0;
+        let total_input_tokens = 0, total_output_tokens = 0, total_cost_usd = 0;
+        for (const s of sessions) {
+          total_sessions++;
+          total_messages += s.message_count ?? 0;
+          total_tool_calls += s.tool_call_count ?? 0;
+          total_input_tokens += s.input_tokens ?? 0;
+          total_output_tokens += s.output_tokens ?? 0;
+          total_cost_usd += s.actual_cost_usd ?? s.estimated_cost_usd
+            ?? estimateCost(s.model, s.input_tokens ?? 0, s.output_tokens ?? 0);
+        }
+        total_cost_usd = Math.round(total_cost_usd * 1_000_000) / 1_000_000;
+
+        const r = { total_sessions, total_messages, total_tool_calls, total_input_tokens, total_output_tokens, total_cost_usd };
         const key = `${r.total_sessions}|${r.total_messages}|${r.total_tool_calls}|${r.total_input_tokens}|${r.total_output_tokens}|${r.total_cost_usd}`;
         if (key === lastKey) return;
         lastKey = key;
