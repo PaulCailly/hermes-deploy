@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiFetch } from '../../lib/api';
 import { JobDrawer } from '../jobs/JobDrawer';
-import type { StatusPayloadDto } from '@hermes/dto';
+import type { StatusPayloadDto, DomainCheckDto } from '@hermes/dto';
 import type { Navigate } from '../../lib/types';
 
 interface InfraTabProps {
@@ -31,6 +31,55 @@ function InfoRow({ label, value, badge }: { label: string; value: string; badge?
       ) : (
         <span className="text-slate-200 text-sm font-mono">{value || '\u2014'}</span>
       )}
+    </div>
+  );
+}
+
+function CheckRow({ label, ok, detail }: { label: string; ok: boolean; detail: string }) {
+  return (
+    <div className="flex justify-between items-center py-1.5">
+      <span className="text-slate-500 text-sm">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className={`w-2 h-2 rounded-full ${ok ? 'bg-emerald-400' : 'bg-red-400'}`} />
+        <span className="text-slate-200 text-sm font-mono">{detail}</span>
+      </div>
+    </div>
+  );
+}
+
+function DomainCard({ domain }: { domain: DomainCheckDto }) {
+  const c = domain.checks;
+  return (
+    <div className="bg-[#161822] border border-[#2a2d3a] rounded-lg p-4">
+      <h3 className="text-sm font-semibold text-slate-200 mb-3">
+        <i className="fa-solid fa-globe mr-2 text-indigo-500" />Domain
+      </h3>
+      <InfoRow label="Domain" value={domain.name} />
+      <CheckRow
+        label="DNS"
+        ok={c.dns.ok && c.dns.matches}
+        detail={c.dns.resolvedIp ? `${c.dns.resolvedIp}${c.dns.matches ? '' : ' (mismatch)'}` : 'unresolved'}
+      />
+      <CheckRow
+        label="TLS"
+        ok={c.tls.ok}
+        detail={c.tls.expiresAt ? `expires ${c.tls.expiresAt.slice(0, 10)} (${c.tls.daysRemaining}d)` : 'no cert'}
+      />
+      <CheckRow
+        label="nginx"
+        ok={c.nginx.ok}
+        detail={`${c.nginx.active ? 'active' : 'inactive'}, config ${c.nginx.configValid ? 'valid' : 'invalid'}`}
+      />
+      <CheckRow
+        label="Upstream"
+        ok={c.upstream.ok}
+        detail={c.upstream.httpStatus !== null ? `HTTP ${c.upstream.httpStatus}` : 'unreachable'}
+      />
+      <CheckRow
+        label="HTTPS"
+        ok={c.https.ok}
+        detail={c.https.httpStatus !== null ? `HTTP ${c.https.httpStatus}` : 'unreachable'}
+      />
     </div>
   );
 }
@@ -69,6 +118,7 @@ export function InfraTab({ name, status, navigate }: InfraTabProps) {
 
   const stored = status?.stored;
   const live = status?.live;
+  const domain = status?.domain;
 
   return (
     <div className="p-5 max-w-4xl">
@@ -99,6 +149,12 @@ export function InfraTab({ name, status, navigate }: InfraTabProps) {
           )}
         </div>
       </div>
+
+      {domain && (
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <DomainCard domain={domain} />
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-[#161822] border border-[#2a2d3a] rounded-lg p-4">

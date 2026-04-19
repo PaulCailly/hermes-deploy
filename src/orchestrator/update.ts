@@ -94,6 +94,7 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   const rules: NetworkRules = {
     sshAllowedFrom,
     inboundPorts: config.network.inbound_ports,
+    hasDomain: !!config.domain,
   };
   const ledger: ResourceLedger =
     deployment.cloud === 'aws'
@@ -102,11 +103,60 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   await opts.provider.reconcileNetwork(ledger, rules);
   reporter.phaseDone('provision');
 
+  // === Domain DNS reconciliation ===
+  if (config.domain && opts.provider.upsertDnsRecord) {
+    // If the domain name changed, delete the old record first
+    if (deployment.domain_name && deployment.domain_name !== config.domain.name && deployment.dns_record_id && opts.provider.deleteDnsRecord) {
+      const oldParts = (deployment.dns_record_id).split('/');
+      const oldZoneId = oldParts[0];
+      const oldFqdn = oldParts.slice(1).join('/');
+      if (oldZoneId && oldFqdn) {
+        try {
+          await opts.provider.deleteDnsRecord({ zoneId: oldZoneId, fqdn: oldFqdn }, deployment.instance_ip);
+        } catch {
+          // Best-effort cleanup of old record
+        }
+      }
+    }
+    reporter.phaseStart('dns', `Configuring DNS: ${config.domain.name} → ${deployment.instance_ip}`);
+    const dnsRecord = await opts.provider.upsertDnsRecord(config.domain.name, deployment.instance_ip);
+    await store.update(state => {
+      const d = state.deployments[opts.deploymentName]!;
+      d.domain_name = config.domain!.name;
+      d.dns_record_id = `${dnsRecord.zoneId}/${dnsRecord.fqdn}`;
+    });
+    reporter.phaseDone('dns');
+  } else if (!config.domain && deployment.domain_name && opts.provider.deleteDnsRecord) {
+    // Domain was removed from config
+    reporter.phaseStart('dns', `Removing DNS record for ${deployment.domain_name}`);
+    const parts = (deployment.dns_record_id ?? '').split('/');
+    const zoneId = parts[0];
+    const fqdn = parts.slice(1).join('/');
+    if (zoneId && fqdn) {
+      await opts.provider.deleteDnsRecord({ zoneId, fqdn }, deployment.instance_ip);
+    }
+    await store.update(state => {
+      const d = state.deployments[opts.deploymentName]!;
+      d.domain_name = undefined;
+      d.dns_record_id = undefined;
+    });
+    reporter.phaseDone('dns');
+  }
+
   // === Network-only optimization ===
   // If the nix-relevant files (config_file, secrets_file, nix_extra,
   // documents) haven't changed since the last successful rebuild, the
   // network reconciliation above was all that was needed. Skip the
   // expensive SSH + nixos-rebuild step.
+  // Include domain config as extra data in the nix hash because [domain]
+  // affects the generated configuration.nix (nginx/ACME). Without this,
+  // changing upstream_port or adding/removing [domain] would skip
+  // nixos-rebuild. We serialize just the domain config rather than
+  // including the full hermes.toml, so network-only changes (like
+  // ssh_allowed_from) still skip the rebuild correctly.
+  const domainExtra = config.domain
+    ? JSON.stringify({ name: config.domain.name, upstream_port: config.domain.upstream_port })
+    : '';
   const nixHash = computeConfigHash(
     [
       pathResolve(deployment.project_path, config.hermes.config_file),
@@ -117,6 +167,7 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
       ...documentPaths,
     ].filter(Boolean),
     true,
+    domainExtra,
   );
   if (nixHash === deployment.last_nix_hash) {
     reporter.success(`network rules updated — ${opts.deploymentName} config unchanged`);

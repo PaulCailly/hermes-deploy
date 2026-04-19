@@ -59,6 +59,15 @@ const HermesSchema = z.object({
   cachix: CachixSchema.optional(),
 });
 
+const DomainSchema = z.object({
+  name: z.string().min(1).regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/, {
+    message: 'domain.name must be a valid FQDN with at least one dot (e.g., app.example.com)',
+  }),
+  upstream_port: z.number().int().min(1).max(65535).refine(p => p !== 80 && p !== 443, {
+    message: 'upstream_port cannot be 80 or 443 — those ports are reserved for nginx',
+  }),
+});
+
 export const HermesTomlSchema = z.object({
   name: z.string().min(1).regex(/^[a-z0-9][a-z0-9-]{0,62}$/, {
     message: 'name must be lowercase alphanumeric with hyphens, 1-63 chars',
@@ -66,6 +75,7 @@ export const HermesTomlSchema = z.object({
   cloud: CloudSchema,
   network: NetworkSchema.default({ ssh_allowed_from: 'auto', inbound_ports: [] }),
   hermes: HermesSchema,
+  domain: DomainSchema.optional(),
 });
 
 export type HermesTomlConfig = z.infer<typeof HermesTomlSchema>;

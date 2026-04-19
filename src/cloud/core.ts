@@ -15,6 +15,8 @@ export interface ImageRef {
 export interface NetworkRules {
   sshAllowedFrom: string; // CIDR
   inboundPorts: number[];
+  /** When true, ports 80 and 443 are automatically added for nginx/ACME. */
+  hasDomain?: boolean;
 }
 
 export interface ProvisionSpec {
@@ -52,6 +54,11 @@ export interface AdoptResult {
   publicIp: string | null;
 }
 
+export interface DnsRecord {
+  zoneId: string;
+  fqdn: string;
+}
+
 export interface CloudProvider {
   readonly name: 'aws' | 'gcp';
   resolveNixosImage(loc: Location): Promise<ImageRef>;
@@ -80,6 +87,17 @@ export interface CloudProvider {
    * provenance markers.
    */
   adopt(deploymentName: string): Promise<AdoptResult>;
+
+  /**
+   * Create or update a DNS A record pointing fqdn → ip.
+   * Returns an identifier that can be used for deletion.
+   */
+  upsertDnsRecord?(fqdn: string, ip: string): Promise<DnsRecord>;
+
+  /**
+   * Delete a DNS A record previously created by upsertDnsRecord.
+   */
+  deleteDnsRecord?(record: DnsRecord, ip: string): Promise<void>;
 }
 
 export const SIZE_MAP_AWS: Record<Size, string> = {

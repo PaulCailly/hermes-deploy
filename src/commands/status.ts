@@ -2,8 +2,10 @@ import { resolveDeployment } from './resolve.js';
 import { createCloudProvider } from '../cloud/factory.js';
 import { getStatePaths } from '../state/paths.js';
 import { StateStore } from '../state/store.js';
+import { collectDomainCheck } from '../domain/collect-domain-check.js';
 import type { Deployment } from '../schema/state-toml.js';
 import type { InstanceStatus } from '../cloud/core.js';
+import type { DomainCheckDto } from '../schema/dto.js';
 
 export interface StatusOptions {
   name?: string;
@@ -31,6 +33,7 @@ export interface StatusPayload {
     age_key_path: string;
   };
   live?: InstanceStatus;
+  domain?: DomainCheckDto;
 }
 
 export async function statusCommand(opts: StatusOptions): Promise<void> {
@@ -69,6 +72,8 @@ export async function statusCommand(opts: StatusOptions): Promise<void> {
       : { kind: 'gcp', resources: deployment.cloud_resources },
   );
 
+  const domainCheck = await collectDomainCheck(deployment, live.state === 'running');
+
   const payload: StatusPayload = {
     name,
     found: true,
@@ -84,6 +89,7 @@ export async function statusCommand(opts: StatusOptions): Promise<void> {
       age_key_path: deployment.age_key_path,
     },
     live,
+    domain: domainCheck,
   };
 
   if (opts.json) {
@@ -100,4 +106,15 @@ export async function statusCommand(opts: StatusOptions): Promise<void> {
   console.log(`  Health:      ${deployment.health}`);
   console.log(`  Deployed at: ${deployment.last_deployed_at}`);
   console.log(`  SSH key:     ${deployment.ssh_key_path}`);
+
+  if (domainCheck) {
+    const c = domainCheck.checks;
+    console.log('');
+    console.log(`  Domain:      ${domainCheck.name}`);
+    console.log(`  DNS:         ${c.dns.ok ? 'ok' : 'FAIL'} — ${c.dns.resolvedIp ?? '(unresolved)'}${c.dns.matches ? ' (matches)' : ` (expected ${c.dns.expectedIp})`}`);
+    console.log(`  TLS:         ${c.tls.ok ? 'ok' : 'FAIL'} — ${c.tls.expiresAt ? `expires ${c.tls.expiresAt.slice(0, 10)} (${c.tls.daysRemaining}d)` : '(no cert)'}`);
+    console.log(`  nginx:       ${c.nginx.ok ? 'ok' : 'FAIL'} — ${c.nginx.active ? 'active' : 'inactive'}, config ${c.nginx.configValid ? 'valid' : 'invalid'}`);
+    console.log(`  Upstream:    ${c.upstream.ok ? 'ok' : 'FAIL'} — ${c.upstream.httpStatus !== null ? `HTTP ${c.upstream.httpStatus}` : '(unreachable)'}`);
+    console.log(`  HTTPS:       ${c.https.ok ? 'ok' : 'FAIL'} — ${c.https.httpStatus !== null ? `HTTP ${c.https.httpStatus}` : '(unreachable)'}`);
+  }
 }

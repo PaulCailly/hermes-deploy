@@ -60,6 +60,9 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
       live = { state: 'unknown' as const, publicIp: null };
     }
 
+    const { collectDomainCheck } = await import('../../domain/collect-domain-check.js');
+    const domain = await collectDomainCheck(deployment, live.state === 'running');
+
     return {
       name,
       found: true,
@@ -75,6 +78,7 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         age_key_path: deployment.age_key_path,
       },
       live,
+      domain,
     };
   });
 

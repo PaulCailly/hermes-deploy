@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import type {
   AdoptResult,
   CloudProvider,
+  DnsRecord,
   ImageRef,
   Instance,
   InstanceStatus,
@@ -16,6 +17,7 @@ import { reconcileNetworkGcp } from './reconcile-network.js';
 import { destroyGcp } from './destroy.js';
 import { statusGcp } from './status.js';
 import { adoptGcp } from './adopt.js';
+import { findManagedZoneGcp, upsertDnsRecordGcp, deleteDnsRecordGcp } from './dns.js';
 
 export interface GcpProviderOptions {
   zone: string;
@@ -81,5 +83,21 @@ export class GcpProvider implements CloudProvider {
   async adopt(deploymentName: string): Promise<AdoptResult> {
     const project = await this.getProject();
     return adoptGcp(project, this.opts.zone, deploymentName);
+  }
+
+  async upsertDnsRecord(fqdn: string, ip: string): Promise<DnsRecord> {
+    const project = await this.getProject();
+    const zone = await findManagedZoneGcp(project, fqdn);
+    await upsertDnsRecordGcp(project, zone.zoneName, fqdn, ip);
+    return { zoneId: zone.zoneName, fqdn };
+  }
+
+  async deleteDnsRecord(record: DnsRecord, _ip: string): Promise<void> {
+    const project = await this.getProject();
+    try {
+      await deleteDnsRecordGcp(project, record.zoneId, record.fqdn);
+    } catch {
+      // Best-effort cleanup
+    }
   }
 }

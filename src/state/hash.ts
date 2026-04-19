@@ -11,7 +11,7 @@ import { readFileSync, existsSync } from 'node:fs';
  *   [hermes.toml, secrets.enc.yaml, configuration.nix.extra]).
  * @param allowMissing If true, missing files are skipped instead of throwing.
  */
-export function computeConfigHash(filePaths: string[], allowMissing = false): string {
+export function computeConfigHash(filePaths: string[], allowMissing = false, extraData?: string): string {
   const hash = createHash('sha256');
   for (const path of filePaths) {
     if (!existsSync(path)) {
@@ -19,6 +19,10 @@ export function computeConfigHash(filePaths: string[], allowMissing = false): st
       throw new Error(`computeConfigHash: file not found: ${path}`);
     }
     hash.update(readFileSync(path));
+    hash.update('\n--\n');
+  }
+  if (extraData) {
+    hash.update(extraData);
     hash.update('\n--\n');
   }
   return `sha256:${hash.digest('hex')}`;

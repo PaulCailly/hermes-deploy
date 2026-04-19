@@ -1,7 +1,9 @@
 import { EC2Client } from '@aws-sdk/client-ec2';
+import { Route53Client } from '@aws-sdk/client-route-53';
 import type {
   AdoptResult,
   CloudProvider,
+  DnsRecord,
   ImageRef,
   Instance,
   InstanceStatus,
@@ -16,6 +18,7 @@ import { reconcileNetworkAws } from './reconcile-network.js';
 import { destroyAws } from './destroy.js';
 import { statusAws } from './status.js';
 import { adoptAws } from './adopt.js';
+import { findHostedZoneAws, upsertDnsRecordAws, deleteDnsRecordAws } from './dns.js';
 
 export interface AwsProviderOptions {
   region: string;
@@ -26,10 +29,12 @@ export interface AwsProviderOptions {
 export class AwsProvider implements CloudProvider {
   readonly name = 'aws' as const;
   private readonly ec2: EC2Client;
+  private readonly r53: Route53Client;
 
   constructor(private readonly opts: AwsProviderOptions) {
     if (opts.profile) process.env.AWS_PROFILE = opts.profile;
     this.ec2 = new EC2Client({ region: opts.region });
+    this.r53 = new Route53Client({ region: opts.region });
   }
 
   async resolveNixosImage(_loc: Location): Promise<ImageRef> {
@@ -54,5 +59,19 @@ export class AwsProvider implements CloudProvider {
 
   adopt(deploymentName: string): Promise<AdoptResult> {
     return adoptAws(this.ec2, deploymentName, this.opts.region);
+  }
+
+  async upsertDnsRecord(fqdn: string, ip: string): Promise<DnsRecord> {
+    const zone = await findHostedZoneAws(this.r53, fqdn);
+    await upsertDnsRecordAws(this.r53, zone.zoneId, fqdn, ip);
+    return { zoneId: zone.zoneId, fqdn };
+  }
+
+  async deleteDnsRecord(record: DnsRecord, ip: string): Promise<void> {
+    try {
+      await deleteDnsRecordAws(this.r53, record.zoneId, record.fqdn, ip);
+    } catch {
+      // Best-effort cleanup
+    }
   }
 }

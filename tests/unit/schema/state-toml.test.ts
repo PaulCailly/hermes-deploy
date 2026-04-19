@@ -37,6 +37,78 @@ describe('StateTomlSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a deployment with domain_name and dns_record_id', () => {
+    const state: StateToml = {
+      schema_version: 3,
+      deployments: {
+        'acme-discord-bot': {
+          project_path: '/Users/paul/clients/acme/discord-bot',
+          cloud: 'aws',
+          region: 'eu-west-3',
+          created_at: '2026-04-09T14:23:11Z',
+          last_deployed_at: '2026-04-09T14:31:42Z',
+          last_config_hash: 'sha256:abc123',
+          last_nix_hash: 'sha256:abc123',
+          ssh_key_path: '/Users/paul/.config/hermes-deploy/ssh_keys/acme-discord-bot',
+          age_key_path: '/Users/paul/.config/hermes-deploy/age_keys/acme-discord-bot',
+          health: 'healthy',
+          instance_ip: '203.0.113.42',
+          domain_name: 'bot.acme.example.com',
+          dns_record_id: 'Z0ABC123DEF456/bot.acme.example.com',
+          cloud_resources: {
+            instance_id: 'i-0abc',
+            security_group_id: 'sg-0def',
+            key_pair_name: 'hermes-deploy-acme-discord-bot',
+            eip_allocation_id: 'eipalloc-0ghi',
+            region: 'eu-west-3',
+          },
+        },
+      },
+    };
+    const result = StateTomlSchema.safeParse(state);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const dep = result.data.deployments['acme-discord-bot']!;
+      expect(dep.domain_name).toBe('bot.acme.example.com');
+      expect(dep.dns_record_id).toBe('Z0ABC123DEF456/bot.acme.example.com');
+    }
+  });
+
+  it('accepts a deployment without domain fields (backward compat)', () => {
+    const state: StateToml = {
+      schema_version: 3,
+      deployments: {
+        'acme-discord-bot': {
+          project_path: '/Users/paul/clients/acme/discord-bot',
+          cloud: 'aws',
+          region: 'eu-west-3',
+          created_at: '2026-04-09T14:23:11Z',
+          last_deployed_at: '2026-04-09T14:31:42Z',
+          last_config_hash: 'sha256:abc123',
+          last_nix_hash: 'sha256:abc123',
+          ssh_key_path: '/Users/paul/.config/hermes-deploy/ssh_keys/acme-discord-bot',
+          age_key_path: '/Users/paul/.config/hermes-deploy/age_keys/acme-discord-bot',
+          health: 'healthy',
+          instance_ip: '203.0.113.42',
+          cloud_resources: {
+            instance_id: 'i-0abc',
+            security_group_id: 'sg-0def',
+            key_pair_name: 'hermes-deploy-acme-discord-bot',
+            eip_allocation_id: 'eipalloc-0ghi',
+            region: 'eu-west-3',
+          },
+        },
+      },
+    };
+    const result = StateTomlSchema.safeParse(state);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const dep = result.data.deployments['acme-discord-bot']!;
+      expect(dep.domain_name).toBeUndefined();
+      expect(dep.dns_record_id).toBeUndefined();
+    }
+  });
+
   it('rejects unknown schema_version', () => {
     const result = StateTomlSchema.safeParse({ schema_version: 99, deployments: {} });
     expect(result.success).toBe(false);

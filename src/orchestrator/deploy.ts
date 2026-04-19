@@ -89,6 +89,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
     networkRules: {
       sshAllowedFrom,
       inboundPorts: config.network.inbound_ports,
+      hasDomain: !!config.domain,
     },
   };
   const instance = await opts.provider.provision(spec, ledger);
@@ -146,6 +147,18 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
     });
   }
   reporter.phaseDone('provision');
+
+  // === Phase 2.5 — DNS ===
+  if (config.domain && opts.provider.upsertDnsRecord) {
+    reporter.phaseStart('dns', `Configuring DNS: ${config.domain.name} → ${instance.publicIp}`);
+    const dnsRecord = await opts.provider.upsertDnsRecord(config.domain.name, instance.publicIp);
+    await store.update(state => {
+      const d = state.deployments[config.name]!;
+      d.domain_name = config.domain!.name;
+      d.dns_record_id = `${dnsRecord.zoneId}/${dnsRecord.fqdn}`;
+    });
+    reporter.phaseDone('dns');
+  }
 
   // === Phase 3 — wait for SSH ===
   reporter.phaseStart('wait-ssh', `Waiting for SSH on ${instance.publicIp}`);
