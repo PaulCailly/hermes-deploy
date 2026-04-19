@@ -60,6 +60,53 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
       live = { state: 'unknown' as const, publicIp: null };
     }
 
+    // Domain health checks
+    let domain;
+    if (deployment.domain_name) {
+      let upstreamPort = 3000;
+      try {
+        const { loadHermesToml } = await import('../../schema/load.js');
+        const config = loadHermesToml(`${deployment.project_path}/hermes.toml`);
+        if (config.domain) upstreamPort = config.domain.upstream_port;
+      } catch { /* fallback */ }
+
+      const { runExternalDomainChecks } = await import('../../domain/external-check.js');
+      const external = await runExternalDomainChecks(deployment.domain_name, deployment.instance_ip);
+
+      let nginxCheck = { ok: false, active: false, configValid: false };
+      let remoteTls = { ok: false, expiresAt: null as string | null, daysRemaining: null as number | null };
+      let upstreamCheck = { ok: false, httpStatus: null as number | null };
+
+      if (live.state === 'running') {
+        try {
+          const { readFileSync } = await import('node:fs');
+          const { createSshSession } = await import('../../remote-ops/session.js');
+          const { runRemoteDomainChecks } = await import('../../remote-ops/domain-check.js');
+          const privateKey = readFileSync(deployment.ssh_key_path, 'utf-8');
+          const session = await createSshSession({ host: deployment.instance_ip, username: 'root', privateKey });
+          try {
+            const remote = await runRemoteDomainChecks(session, deployment.domain_name!, upstreamPort);
+            nginxCheck = remote.nginx;
+            remoteTls = remote.tls;
+            upstreamCheck = remote.upstream;
+          } finally {
+            await session.dispose();
+          }
+        } catch { /* SSH failed */ }
+      }
+
+      domain = {
+        name: deployment.domain_name,
+        checks: {
+          dns: external.dns,
+          tls: external.tls.ok ? external.tls : { ok: remoteTls.ok, valid: remoteTls.ok, expiresAt: remoteTls.expiresAt, daysRemaining: remoteTls.daysRemaining },
+          nginx: nginxCheck,
+          upstream: upstreamCheck,
+          https: external.https,
+        },
+      };
+    }
+
     return {
       name,
       found: true,
@@ -75,6 +122,7 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         age_key_path: deployment.age_key_path,
       },
       live,
+      domain,
     };
   });
 
