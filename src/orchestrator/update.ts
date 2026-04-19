@@ -94,6 +94,7 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   const rules: NetworkRules = {
     sshAllowedFrom,
     inboundPorts: config.network.inbound_ports,
+    hasDomain: !!config.domain,
   };
   const ledger: ResourceLedger =
     deployment.cloud === 'aws'
@@ -101,6 +102,33 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
       : { kind: 'gcp', resources: { ...deployment.cloud_resources } };
   await opts.provider.reconcileNetwork(ledger, rules);
   reporter.phaseDone('provision');
+
+  // === Domain DNS reconciliation ===
+  if (config.domain && opts.provider.upsertDnsRecord) {
+    reporter.phaseStart('dns', `Configuring DNS: ${config.domain.name} → ${deployment.instance_ip}`);
+    const dnsRecord = await opts.provider.upsertDnsRecord(config.domain.name, deployment.instance_ip);
+    await store.update(state => {
+      const d = state.deployments[opts.deploymentName]!;
+      d.domain_name = config.domain!.name;
+      d.dns_record_id = `${dnsRecord.zoneId}/${dnsRecord.fqdn}`;
+    });
+    reporter.phaseDone('dns');
+  } else if (!config.domain && deployment.domain_name && opts.provider.deleteDnsRecord) {
+    // Domain was removed from config
+    reporter.phaseStart('dns', `Removing DNS record for ${deployment.domain_name}`);
+    const parts = (deployment.dns_record_id ?? '').split('/');
+    const zoneId = parts[0];
+    const fqdn = parts.slice(1).join('/');
+    if (zoneId && fqdn) {
+      await opts.provider.deleteDnsRecord({ zoneId, fqdn }, deployment.instance_ip);
+    }
+    await store.update(state => {
+      const d = state.deployments[opts.deploymentName]!;
+      delete (d as any).domain_name;
+      delete (d as any).dns_record_id;
+    });
+    reporter.phaseDone('dns');
+  }
 
   // === Network-only optimization ===
   // If the nix-relevant files (config_file, secrets_file, nix_extra,
