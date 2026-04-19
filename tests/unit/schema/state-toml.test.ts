@@ -68,7 +68,7 @@ describe('StateTomlSchema', () => {
     const result = StateTomlSchema.safeParse(state);
     expect(result.success).toBe(true);
     if (result.success) {
-      const dep = result.data.deployments['acme-discord-bot'];
+      const dep = result.data.deployments['acme-discord-bot']!;
       expect(dep.domain_name).toBe('bot.acme.example.com');
       expect(dep.dns_record_id).toBe('rec_0abc123def456');
     }
@@ -103,7 +103,7 @@ describe('StateTomlSchema', () => {
     const result = StateTomlSchema.safeParse(state);
     expect(result.success).toBe(true);
     if (result.success) {
-      const dep = result.data.deployments['acme-discord-bot'];
+      const dep = result.data.deployments['acme-discord-bot']!;
       expect(dep.domain_name).toBeUndefined();
       expect(dep.dns_record_id).toBeUndefined();
     }

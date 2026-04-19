@@ -34,12 +34,12 @@ export async function upsertDnsRecordGcp(
   const fqdnDot = fqdn.endsWith('.') ? fqdn : `${fqdn}.`;
 
   const [existing] = await zone.getRecords({ name: fqdnDot, type: 'A' });
-  const newRecord = { name: fqdnDot, type: 'A', ttl: 300, data: [ip] };
+  const newRecord = { name: fqdnDot, type: 'A', ttl: 300, data: [ip] } as any;
 
   if (existing && existing.length > 0) {
-    await zone.createChange({ delete: existing, add: newRecord });
+    await zone.createChange({ delete: existing, add: newRecord } as any);
   } else {
-    await zone.createChange({ add: newRecord });
+    await zone.createChange({ add: newRecord } as any);
   }
 }
 

@@ -27,7 +27,7 @@ describe('findHostedZoneAws', () => {
         },
       ],
       IsTruncated: false,
-      MaxItems: '100',
+      MaxItems: 100,
     });
 
     const r53 = new Route53Client({ region: 'us-east-1' });
@@ -41,7 +41,7 @@ describe('findHostedZoneAws', () => {
     r53Mock.on(ListHostedZonesByNameCommand).resolves({
       HostedZones: [],
       IsTruncated: false,
-      MaxItems: '100',
+      MaxItems: 100,
     });
 
     const r53 = new Route53Client({ region: 'us-east-1' });
