@@ -40,6 +40,11 @@ export async function reconcileNetworkAws(
     ...rules.inboundPorts.map(port => ({ port, cidr: '0.0.0.0/0' })),
   ];
 
+  if (rules.hasDomain) {
+    if (!desired.some(d => d.port === 80)) desired.push({ port: 80, cidr: '0.0.0.0/0' });
+    if (!desired.some(d => d.port === 443)) desired.push({ port: 443, cidr: '0.0.0.0/0' });
+  }
+
   const result = await ec2.send(new DescribeSecurityGroupsCommand({ GroupIds: [groupId] }));
   const current = flatten(result.SecurityGroups?.[0]?.IpPermissions ?? []);
 

@@ -15,6 +15,8 @@ export interface ImageRef {
 export interface NetworkRules {
   sshAllowedFrom: string; // CIDR
   inboundPorts: number[];
+  /** When true, ports 80 and 443 are automatically added for nginx/ACME. */
+  hasDomain?: boolean;
 }
 
 export interface ProvisionSpec {

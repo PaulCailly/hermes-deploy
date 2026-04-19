@@ -35,7 +35,12 @@ export async function reconcileNetworkGcp(
 
   // --- Ports rule ---
   const hasPortsRule = ruleNames.includes(portsRuleName);
-  const wantsPorts = rules.inboundPorts.length > 0;
+  const allInboundPorts = [...rules.inboundPorts];
+  if (rules.hasDomain) {
+    if (!allInboundPorts.includes(80)) allInboundPorts.push(80);
+    if (!allInboundPorts.includes(443)) allInboundPorts.push(443);
+  }
+  const wantsPorts = allInboundPorts.length > 0;
 
   if (wantsPorts && !hasPortsRule) {
     // Create the ports rule
@@ -45,7 +50,7 @@ export async function reconcileNetworkGcp(
         name: portsRuleName,
         network: `projects/${project}/global/networks/default`,
         direction: 'INGRESS',
-        allowed: [{ IPProtocol: 'tcp', ports: rules.inboundPorts.map(String) }],
+        allowed: [{ IPProtocol: 'tcp', ports: allInboundPorts.map(String) }],
         sourceRanges: ['0.0.0.0/0'],
         targetTags: [baseName],
       },
@@ -56,7 +61,7 @@ export async function reconcileNetworkGcp(
     // Patch existing ports rule if ports changed
     const [current] = await client.get({ project, firewall: portsRuleName });
     const currentPorts = current.allowed?.[0]?.ports ?? [];
-    const desiredPorts = rules.inboundPorts.map(String).sort();
+    const desiredPorts = allInboundPorts.map(String).sort();
     if (JSON.stringify([...currentPorts].sort()) !== JSON.stringify(desiredPorts)) {
       const [op] = await client.patch({
         project,
