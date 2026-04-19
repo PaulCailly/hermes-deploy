@@ -6,3 +6,9 @@ coverage/
 *.log
 .env
 .env.local
+
+# Superpowers brainstorm session artifacts
+.superpowers/
+
+# Reference apps (not part of this repo)
+scarf-main/

@@ -63,7 +63,7 @@ export function NewDeploymentWizard({ onBack, onCreated }: Props) {
               onClick={() => onCreated(derivedName)}
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors"
             >
-              Go to deployment
+              Go to agent
             </button>
             <button
               onClick={onBack}
@@ -83,7 +83,7 @@ export function NewDeploymentWizard({ onBack, onCreated }: Props) {
         <button onClick={onBack} className="text-gray-400 hover:text-white transition-colors text-sm">
           &larr; Back
         </button>
-        <h1 className="text-2xl font-bold">New Deployment</h1>
+        <h1 className="text-2xl font-bold">New Agent</h1>
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
@@ -108,7 +108,7 @@ export function NewDeploymentWizard({ onBack, onCreated }: Props) {
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-1.5">
-            Deployment name <span className="text-gray-500">(optional)</span>
+            Agent name <span className="text-gray-500">(optional)</span>
           </label>
           <input
             value={name}

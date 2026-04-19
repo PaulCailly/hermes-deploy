@@ -15,6 +15,8 @@ import { initRoutes } from './routes/init.js';
 import { jobRoutes } from './routes/jobs.js';
 import { logRoutes } from './routes/logs.js';
 import { sshRoutes } from './routes/ssh.js';
+import { agentDataRoutes } from './routes/agent-data.js';
+import { orgRoutes } from './routes/org.js';
 
 export interface CreateServerOptions {
   host: string;
@@ -34,6 +36,11 @@ export async function createDashboardServer(opts: CreateServerOptions): Promise<
   // WebSocket support
   await app.register(websocket);
 
+  // Text/plain body parser (used for skill file writes)
+  app.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body);
+  });
+
   // Auth + DNS rebinding protection
   app.addHook('onRequest', createAuthHook(token, opts.auth, opts.host));
 
@@ -51,10 +58,12 @@ export async function createDashboardServer(opts: CreateServerOptions): Promise<
   await app.register(async (instance) => jobRoutes(instance, bus));
   await app.register(async (instance) => logRoutes(instance));
   await app.register(async (instance) => sshRoutes(instance));
+  await app.register(async (instance) => agentDataRoutes(instance));
+  await app.register(async (instance) => orgRoutes(instance));
 
   // Static SPA serving (must be last — has the wildcard fallback)
   const thisDir = dirname(fileURLToPath(import.meta.url));
-  const webDistDir = join(thisDir, '..', 'web');
+  const webDistDir = join(thisDir, 'web');
   await registerStatic(app, webDistDir);
 
   return {

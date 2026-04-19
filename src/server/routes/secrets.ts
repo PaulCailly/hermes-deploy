@@ -33,7 +33,7 @@ export async function secretRoutes(app: FastifyInstance): Promise<void> {
       if (!projectPath) return;
 
       try {
-        const keys = await secretList({ name: request.params.name, projectPath });
+        const keys = await secretList({ projectPath });
         return { keys };
       } catch (err) {
         console.error('secret list failed:', err);
@@ -52,7 +52,6 @@ export async function secretRoutes(app: FastifyInstance): Promise<void> {
       try {
         const value = await secretGet({
           key: request.params.key,
-          name: request.params.name,
           projectPath,
         });
         if (value === undefined) {
@@ -84,7 +83,6 @@ export async function secretRoutes(app: FastifyInstance): Promise<void> {
         await secretSet({
           key: request.params.key,
           value,
-          name: request.params.name,
           projectPath,
         });
         return { ok: true };
@@ -105,7 +103,6 @@ export async function secretRoutes(app: FastifyInstance): Promise<void> {
       try {
         await secretRemove({
           key: request.params.key,
-          name: request.params.name,
           projectPath,
         });
         return { ok: true };
