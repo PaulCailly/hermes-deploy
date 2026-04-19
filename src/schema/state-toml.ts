@@ -37,6 +37,8 @@ const BaseDeploymentSchema = z.object({
   age_key_path: z.string().min(1),
   health: HealthSchema,
   instance_ip: z.string().min(1),
+  domain_name: z.string().min(1).optional(),
+  dns_record_id: z.string().min(1).optional(),
 });
 
 const DeploymentSchema = z.discriminatedUnion('cloud', [
