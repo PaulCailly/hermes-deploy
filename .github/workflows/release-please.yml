@@ -51,18 +51,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          # Node 22 LTS ships with npm 10.x; we upgrade to npm 11.5+
-          # explicitly below because trusted publishing requires it.
-          node-version: '22'
+          # Node 24 ships with npm 11.x which supports trusted publishing
+          # via OIDC out of the box — no manual npm upgrade needed.
+          node-version: '24'
           cache: npm
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Upgrade npm to 11.5+ (required for trusted publishing)
-        # Trusted publishing via OIDC was added in npm 11.5.1. Node 22
-        # ships with npm 10.x, so we upgrade explicitly here. Locking
-        # to the major version so a future breaking change in npm 12
-        # doesn't silently break the release pipeline.
-        run: npm install -g npm@11
 
       - name: Install age + sops
         # Required by the test suite (secrets/sops tests skip otherwise).
