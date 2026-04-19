@@ -341,9 +341,9 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     const data = await readRemoteJson<{
       pid?: number;
       kind?: string;
-      gatewayState?: string;
-      platforms?: Record<string, { connected?: boolean }>;
-      updatedAt?: string;
+      gateway_state?: string;
+      platforms?: Record<string, { state?: string; connected?: boolean }>;
+      updated_at?: string;
     }>(name, '/var/lib/hermes/.hermes/gateway_state.json');
 
     if (!data) {
@@ -352,13 +352,14 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
 
     const platforms = Object.entries(data.platforms ?? {}).map(([pname, pstate]) => ({
       name: pname,
-      connected: Boolean(pstate?.connected),
-      sessionCount: 0, // Not tracked in gateway_state.json; would need separate query
+      // hermes-agent uses { state: "connected" }, older versions used { connected: true }
+      connected: pstate?.state === 'connected' || Boolean(pstate?.connected),
+      sessionCount: 0,
       trafficPercent: 0,
     }));
 
     return {
-      isRunning: data.gatewayState === 'running',
+      isRunning: data.gateway_state === 'running',
       pid: data.pid,
       uptime: undefined,
       platforms,
