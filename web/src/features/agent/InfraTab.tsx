@@ -118,7 +118,7 @@ export function InfraTab({ name, status, navigate }: InfraTabProps) {
 
   const stored = status?.stored;
   const live = status?.live;
-  const domain = (status as any)?.domain as DomainCheckDto | undefined;
+  const domain = status?.domain;
 
   return (
     <div className="p-5 max-w-4xl">

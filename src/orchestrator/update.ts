@@ -105,6 +105,19 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
 
   // === Domain DNS reconciliation ===
   if (config.domain && opts.provider.upsertDnsRecord) {
+    // If the domain name changed, delete the old record first
+    if (deployment.domain_name && deployment.domain_name !== config.domain.name && deployment.dns_record_id && opts.provider.deleteDnsRecord) {
+      const oldParts = (deployment.dns_record_id).split('/');
+      const oldZoneId = oldParts[0];
+      const oldFqdn = oldParts.slice(1).join('/');
+      if (oldZoneId && oldFqdn) {
+        try {
+          await opts.provider.deleteDnsRecord({ zoneId: oldZoneId, fqdn: oldFqdn }, deployment.instance_ip);
+        } catch {
+          // Best-effort cleanup of old record
+        }
+      }
+    }
     reporter.phaseStart('dns', `Configuring DNS: ${config.domain.name} → ${deployment.instance_ip}`);
     const dnsRecord = await opts.provider.upsertDnsRecord(config.domain.name, deployment.instance_ip);
     await store.update(state => {
@@ -135,6 +148,15 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   // documents) haven't changed since the last successful rebuild, the
   // network reconciliation above was all that was needed. Skip the
   // expensive SSH + nixos-rebuild step.
+  // Include domain config as extra data in the nix hash because [domain]
+  // affects the generated configuration.nix (nginx/ACME). Without this,
+  // changing upstream_port or adding/removing [domain] would skip
+  // nixos-rebuild. We serialize just the domain config rather than
+  // including the full hermes.toml, so network-only changes (like
+  // ssh_allowed_from) still skip the rebuild correctly.
+  const domainExtra = config.domain
+    ? JSON.stringify({ name: config.domain.name, upstream_port: config.domain.upstream_port })
+    : '';
   const nixHash = computeConfigHash(
     [
       pathResolve(deployment.project_path, config.hermes.config_file),
@@ -145,6 +167,7 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
       ...documentPaths,
     ].filter(Boolean),
     true,
+    domainExtra,
   );
   if (nixHash === deployment.last_nix_hash) {
     reporter.success(`network rules updated — ${opts.deploymentName} config unchanged`);

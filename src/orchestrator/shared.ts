@@ -163,7 +163,11 @@ export async function recordConfigAndHealthcheck(
 
   // Nix-only hash (excludes hermes.toml) — used by the network-only
   // optimization in runUpdate to skip nixos-rebuild when only network
-  // rules changed.
+  // rules changed. Includes serialized domain config because [domain]
+  // affects the generated configuration.nix (nginx/ACME).
+  const domainExtra = config.domain
+    ? JSON.stringify({ name: config.domain.name, upstream_port: config.domain.upstream_port })
+    : '';
   const nixHash = computeConfigHash(
     [
       pathResolve(projectDir, config.hermes.config_file),
@@ -172,6 +176,7 @@ export async function recordConfigAndHealthcheck(
       ...documentPaths,
     ].filter(Boolean),
     true,
+    domainExtra,
   );
 
   await store.update(state => {

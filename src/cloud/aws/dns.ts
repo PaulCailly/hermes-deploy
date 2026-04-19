@@ -18,12 +18,13 @@ export async function findHostedZoneAws(
   fqdn: string,
 ): Promise<HostedZoneRef> {
   // Strip trailing dot, then build the list of candidate zone names from
-  // longest to shortest: "backresto.com", "com"
+  // longest to shortest: "backresto.com" → tries "backresto.com.", "com."
+  // Starting at i=0 handles apex domains (e.g. "backresto.com" where the
+  // FQDN itself is the hosted zone). Stop before bare TLDs (i < length - 1).
   const bare = fqdn.replace(/\.$/, '');
   const labels = bare.split('.');
-  // Candidate suffixes: skip the first label (the host part)
   const candidates: string[] = [];
-  for (let i = 1; i < labels.length; i++) {
+  for (let i = 0; i < labels.length - 1; i++) {
     candidates.push(labels.slice(i).join('.'));
   }
 
