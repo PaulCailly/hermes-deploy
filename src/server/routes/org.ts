@@ -71,8 +71,8 @@ function computeAgentStats(sessions: AgentSessionRow[]): AgentStatsComputed {
     total_output_tokens += s.output_tokens ?? 0;
     if (!s.ended_at) active_sessions++;
 
-    const cost = s.actual_cost_usd ?? s.estimated_cost_usd
-      ?? estimateCost(s.model, s.input_tokens ?? 0, s.output_tokens ?? 0);
+    const cost = s.actual_cost_usd || s.estimated_cost_usd
+      || estimateCost(s.model, s.input_tokens ?? 0, s.output_tokens ?? 0);
     total_cost_usd += cost;
 
     const sessionDate = new Date(
@@ -211,8 +211,8 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
           source: row.source ?? 'unknown',
           startedAt: row.started_at,
           active: !row.ended_at,
-          estimatedCostUSD: row.actual_cost_usd ?? row.estimated_cost_usd
-            ?? estimateCost(row.model, row.input_tokens ?? 0, row.output_tokens ?? 0),
+          estimatedCostUSD: row.actual_cost_usd || row.estimated_cost_usd
+            || estimateCost(row.model, row.input_tokens ?? 0, row.output_tokens ?? 0),
           model: row.model ?? '',
         });
       }

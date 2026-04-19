@@ -88,8 +88,8 @@ function rowToSession(r: SessionRow): SessionDto {
     cacheReadTokens: r.cache_read_tokens ?? 0,
     cacheWriteTokens: r.cache_write_tokens ?? 0,
     reasoningTokens: r.reasoning_tokens ?? 0,
-    estimatedCostUSD: r.actual_cost_usd ?? r.estimated_cost_usd
-      ?? estimateCost(r.model, r.input_tokens ?? 0, r.output_tokens ?? 0),
+    estimatedCostUSD: r.actual_cost_usd || r.estimated_cost_usd
+      || estimateCost(r.model, r.input_tokens ?? 0, r.output_tokens ?? 0),
   };
 }
 
@@ -155,8 +155,8 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       totalCacheWriteTokens += s.cache_write_tokens ?? 0;
       totalReasoningTokens += s.reasoning_tokens ?? 0;
 
-      const cost = s.actual_cost_usd ?? s.estimated_cost_usd
-        ?? estimateCost(s.model, s.input_tokens ?? 0, s.output_tokens ?? 0);
+      const cost = s.actual_cost_usd || s.estimated_cost_usd
+        || estimateCost(s.model, s.input_tokens ?? 0, s.output_tokens ?? 0);
       totalCostUSD += cost;
 
       const sessionDate = new Date(
