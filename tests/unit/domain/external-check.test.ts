@@ -8,7 +8,7 @@ vi.mock('node:dns/promises', () => ({
 // Mock node:tls to avoid real network calls
 vi.mock('node:tls', () => ({
   default: {
-    connect: vi.fn((_port: number, _host: string, _opts: any, connectCb?: Function) => {
+    connect: vi.fn((_port: number, _host: string, _opts: any, _connectCb?: Function) => {
       const events: Record<string, Function> = {};
       const socket = {
         on: vi.fn((event: string, cb: Function) => { events[event] = cb; }),
@@ -27,7 +27,7 @@ vi.mock('node:tls', () => ({
 // Mock node:https to avoid real network calls
 vi.mock('node:https', () => ({
   default: {
-    get: vi.fn((_url: string, _opts: any, cb: Function) => {
+    get: vi.fn((_url: string, _opts: any, _cb: Function) => {
       // Simulate connection error by default
       const events: Record<string, Function> = {};
       const req = {
