@@ -59,6 +59,13 @@ const HermesSchema = z.object({
   cachix: CachixSchema.optional(),
 });
 
+const DomainSchema = z.object({
+  name: z.string().min(1).regex(/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/, {
+    message: 'domain.name must be a valid FQDN (lowercase alphanumeric, dots, hyphens)',
+  }),
+  upstream_port: z.number().int().min(1).max(65535),
+});
+
 export const HermesTomlSchema = z.object({
   name: z.string().min(1).regex(/^[a-z0-9][a-z0-9-]{0,62}$/, {
     message: 'name must be lowercase alphanumeric with hyphens, 1-63 chars',
@@ -66,6 +73,7 @@ export const HermesTomlSchema = z.object({
   cloud: CloudSchema,
   network: NetworkSchema.default({ ssh_allowed_from: 'auto', inbound_ports: [] }),
   hermes: HermesSchema,
+  domain: DomainSchema.optional(),
 });
 
 export type HermesTomlConfig = z.infer<typeof HermesTomlSchema>;

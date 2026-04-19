@@ -1,0 +1,18 @@
+name = "test-m3-domain"
+
+[cloud]
+provider = "aws"
+profile = "default"
+region = "eu-west-3"
+size = "small"
+
+[network]
+ssh_allowed_from = "auto"
+
+[hermes]
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"
+
+[domain]
+name = "jarvis.backresto.com"
+upstream_port = 3000

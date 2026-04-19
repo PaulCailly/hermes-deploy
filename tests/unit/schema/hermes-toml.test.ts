@@ -95,4 +95,37 @@ describe('HermesTomlSchema (M3)', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts a config with a valid [domain] section', () => {
+    const raw = loadFixture('m3-domain.toml');
+    const result = HermesTomlSchema.safeParse(raw);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.domain?.name).toBe('jarvis.backresto.com');
+      expect(result.data.domain?.upstream_port).toBe(3000);
+    }
+  });
+
+  it('rejects domain with invalid upstream_port (99999)', () => {
+    const result = HermesTomlSchema.safeParse({
+      name: 'domain-bad-port',
+      cloud: { provider: 'aws', profile: 'd', region: 'eu-west-3', size: 'small' },
+      hermes: { config_file: './c.yaml', secrets_file: './s.env.enc' },
+      domain: { name: 'example.com', upstream_port: 99999 },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const issues = result.error.issues.map(i => i.path.join('.'));
+      expect(issues).toContain('domain.upstream_port');
+    }
+  });
+
+  it('accepts a config without [domain] (domain is undefined)', () => {
+    const raw = loadFixture('m3-minimal.toml');
+    const result = HermesTomlSchema.safeParse(raw);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.domain).toBeUndefined();
+    }
+  });
 });
