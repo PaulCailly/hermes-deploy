@@ -6,6 +6,7 @@ export const PhaseIdSchema = z.enum([
   'validate',
   'ensure-keys',
   'provision',
+  'dns',
   'wait-ssh',
   'bootstrap',
   'healthcheck',
@@ -51,6 +52,40 @@ export const DeploymentSummaryDtoSchema = z.object({
 });
 export type DeploymentSummaryDto = z.infer<typeof DeploymentSummaryDtoSchema>;
 
+// ---------- Domain health checks ----------
+
+export const DomainCheckDtoSchema = z.object({
+  name: z.string(),
+  checks: z.object({
+    dns: z.object({
+      ok: z.boolean(),
+      resolvedIp: z.string().nullable(),
+      expectedIp: z.string(),
+      matches: z.boolean(),
+    }),
+    tls: z.object({
+      ok: z.boolean(),
+      valid: z.boolean(),
+      expiresAt: z.string().nullable(),
+      daysRemaining: z.number().nullable(),
+    }),
+    nginx: z.object({
+      ok: z.boolean(),
+      active: z.boolean(),
+      configValid: z.boolean(),
+    }),
+    upstream: z.object({
+      ok: z.boolean(),
+      httpStatus: z.number().nullable(),
+    }),
+    https: z.object({
+      ok: z.boolean(),
+      httpStatus: z.number().nullable(),
+    }),
+  }),
+});
+export type DomainCheckDto = z.infer<typeof DomainCheckDtoSchema>;
+
 // ---------- Status (GET /api/deployments/:name) ----------
 
 export const InstanceStatusDtoSchema = z.object({
@@ -76,6 +111,7 @@ export const StatusPayloadDtoSchema = z.object({
     age_key_path: z.string(),
   }).optional(),
   live: InstanceStatusDtoSchema.optional(),
+  domain: DomainCheckDtoSchema.optional(),
 });
 export type StatusPayloadDto = z.infer<typeof StatusPayloadDtoSchema>;
 

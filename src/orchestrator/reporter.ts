@@ -2,6 +2,7 @@ export type PhaseId =
   | 'validate'
   | 'ensure-keys'
   | 'provision'
+  | 'dns'
   | 'wait-ssh'
   | 'bootstrap'
   | 'healthcheck';
