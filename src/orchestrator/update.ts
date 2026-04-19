@@ -137,8 +137,8 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
     }
     await store.update(state => {
       const d = state.deployments[opts.deploymentName]!;
-      delete (d as any).domain_name;
-      delete (d as any).dns_record_id;
+      d.domain_name = undefined;
+      d.dns_record_id = undefined;
     });
     reporter.phaseDone('dns');
   }

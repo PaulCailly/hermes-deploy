@@ -85,9 +85,26 @@ export async function deleteDnsRecordAws(
   r53: Route53Client,
   zoneId: string,
   fqdn: string,
-  ip: string,
+  _ip: string,
 ): Promise<void> {
   const name = fqdn.endsWith('.') ? fqdn : `${fqdn}.`;
+
+  // Route53 DELETE requires the exact record set (TTL + values) to match.
+  // Look up the existing record instead of assuming TTL=300 and the passed IP.
+  const { ListResourceRecordSetsCommand } = await import('@aws-sdk/client-route-53');
+  const listResult = await r53.send(
+    new ListResourceRecordSetsCommand({
+      HostedZoneId: zoneId,
+      StartRecordName: name,
+      StartRecordType: 'A',
+      MaxItems: 1,
+    }),
+  );
+  const existing = listResult.ResourceRecordSets?.find(
+    rrs => rrs.Name === name && rrs.Type === 'A',
+  );
+  if (!existing) return; // no record to delete
+
   await r53.send(
     new ChangeResourceRecordSetsCommand({
       HostedZoneId: zoneId,
@@ -95,12 +112,7 @@ export async function deleteDnsRecordAws(
         Changes: [
           {
             Action: 'DELETE',
-            ResourceRecordSet: {
-              Name: name,
-              Type: 'A',
-              TTL: 300,
-              ResourceRecords: [{ Value: ip }],
-            },
+            ResourceRecordSet: existing,
           },
         ],
       },

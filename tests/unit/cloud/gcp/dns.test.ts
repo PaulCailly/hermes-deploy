@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockGetZones = vi.fn();
-const mockCreateChange = vi.fn();
-const mockGetRecords = vi.fn();
+const { mockGetZones, mockCreateChange, mockGetRecords } = vi.hoisted(() => ({
+  mockGetZones: vi.fn(),
+  mockCreateChange: vi.fn(),
+  mockGetRecords: vi.fn(),
+}));
 
 vi.mock('@google-cloud/dns', () => ({
   DNS: vi.fn().mockImplementation(() => ({

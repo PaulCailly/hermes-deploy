@@ -11,6 +11,15 @@ export async function runRemoteDomainChecks(
   domainName: string,
   upstreamPort: number,
 ): Promise<RemoteDomainChecks> {
+  // Validate inputs before interpolating into shell commands
+  if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(domainName)) {
+    throw new Error(`invalid domain name for shell command: ${domainName}`);
+  }
+  const port = Math.floor(upstreamPort);
+  if (port < 1 || port > 65535) {
+    throw new Error(`invalid upstream port: ${upstreamPort}`);
+  }
+
   // 1. nginx status
   const nginxActive = await session.exec('systemctl is-active nginx');
   const isActive = nginxActive.exitCode === 0 && nginxActive.stdout.trim() === 'active';

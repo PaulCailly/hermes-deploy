@@ -15,14 +15,15 @@ export async function runExternalDomainChecks(
   // 1. DNS resolution
   let resolvedIp: string | null = null;
   let dnsOk = false;
+  let dnsMatches = false;
   try {
     const ips = await resolve4(domainName);
     resolvedIp = ips[0] ?? null;
-    dnsOk = resolvedIp !== null;
+    dnsOk = ips.length > 0;
+    dnsMatches = ips.includes(expectedIp);
   } catch {
     // DNS resolution failed
   }
-  const dnsMatches = resolvedIp === expectedIp;
 
   // 2. TLS check
   let tlsValid = false;
@@ -62,7 +63,7 @@ export async function runExternalDomainChecks(
 
 function getTlsCert(hostname: string): Promise<tls.PeerCertificate | null> {
   return new Promise((resolve) => {
-    const socket = tls.connect(443, hostname, { servername: hostname }, () => {
+    const socket = tls.connect(443, hostname, { servername: hostname, rejectUnauthorized: false }, () => {
       const cert = socket.getPeerCertificate();
       socket.end();
       resolve(cert && cert.subject ? cert : null);

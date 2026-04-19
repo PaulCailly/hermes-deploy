@@ -54,7 +54,7 @@ describe('StateTomlSchema', () => {
           health: 'healthy',
           instance_ip: '203.0.113.42',
           domain_name: 'bot.acme.example.com',
-          dns_record_id: 'rec_0abc123def456',
+          dns_record_id: 'Z0ABC123DEF456/bot.acme.example.com',
           cloud_resources: {
             instance_id: 'i-0abc',
             security_group_id: 'sg-0def',
@@ -70,7 +70,7 @@ describe('StateTomlSchema', () => {
     if (result.success) {
       const dep = result.data.deployments['acme-discord-bot']!;
       expect(dep.domain_name).toBe('bot.acme.example.com');
-      expect(dep.dns_record_id).toBe('rec_0abc123def456');
+      expect(dep.dns_record_id).toBe('Z0ABC123DEF456/bot.acme.example.com');
     }
   });
 

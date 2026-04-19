@@ -105,7 +105,7 @@ On `hermes deploy destroy`, if `domain_name` is present in state:
 
 When `[domain]` is configured, the status output includes:
 
-```
+```text
 Domain:        jarvis.backresto.com
 DNS:           ok — resolves to 13.39.38.162 (matches instance IP)
 TLS:           ok — valid, expires 2026-07-10 (82 days)

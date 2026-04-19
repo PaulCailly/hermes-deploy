@@ -9,9 +9,10 @@ export async function findManagedZoneGcp(project: string, fqdn: string): Promise
   const dns = new DNS({ projectId: project });
   const [zones] = await dns.getZones();
 
-  // Walk up domain labels from most-specific to least-specific
+  // Walk up domain labels from parent zone to TLD.
+  // Start at i=1 to skip the full FQDN itself (which is a record, not a zone).
   const labels = fqdn.split('.');
-  for (let i = 0; i < labels.length - 1; i++) {
+  for (let i = 1; i < labels.length - 1; i++) {
     const candidate = labels.slice(i).join('.') + '.';
     const match = zones.find((z: any) => z.metadata?.dnsName === candidate);
     if (match) {

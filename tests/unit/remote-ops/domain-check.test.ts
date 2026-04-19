@@ -21,10 +21,13 @@ function fakeSession(
 
 describe('runRemoteDomainChecks', () => {
   it('returns all-ok when nginx is active and upstream responds', async () => {
+    // Generate a future date so the test doesn't rot
+    const future = new Date(Date.now() + 30 * 86_400_000);
+    const futureStr = future.toUTCString().replace('UTC', 'GMT');
     const session = fakeSession({
       'systemctl is-active nginx': { exitCode: 0, stdout: 'active\n', stderr: '' },
       'nginx -t': { exitCode: 0, stdout: '', stderr: 'syntax is ok' },
-      '/var/lib/acme': { exitCode: 0, stdout: 'Dec 31 23:59:59 2026 GMT\n', stderr: '' },
+      '/var/lib/acme': { exitCode: 0, stdout: `${futureStr}\n`, stderr: '' },
       'curl': { exitCode: 0, stdout: '200', stderr: '' },
     });
     const result = await runRemoteDomainChecks(session, 'jarvis.backresto.com', 3000);

@@ -24,9 +24,7 @@ describe('configurationNix with domain', () => {
     expect(nix).toContain('jarvis.backresto.com');
     expect(nix).toContain('http://127.0.0.1:3000');
     expect(nix).toContain('security.acme');
-    expect(nix).toContain('networking.firewall.allowedTCPPorts');
-    expect(nix).toContain('80');
-    expect(nix).toContain('443');
+    expect(nix).toContain('networking.firewall.allowedTCPPorts = [ 80 443 ]');
   });
 
   it('does NOT include nginx config when domain is absent', () => {
