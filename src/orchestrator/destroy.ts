@@ -25,6 +25,20 @@ export async function runDestroy(opts: DestroyOptions): Promise<void> {
       ? { kind: 'aws', resources: { ...deployment.cloud_resources } }
       : { kind: 'gcp', resources: { ...deployment.cloud_resources } };
 
+  // Clean up DNS record if one was configured
+  if (deployment.domain_name && deployment.dns_record_id && opts.provider.deleteDnsRecord) {
+    const parts = deployment.dns_record_id.split('/');
+    const zoneId = parts[0];
+    const fqdn = parts.slice(1).join('/');
+    if (zoneId && fqdn) {
+      try {
+        await opts.provider.deleteDnsRecord({ zoneId, fqdn }, deployment.instance_ip);
+      } catch {
+        // Best-effort — DNS cleanup failure shouldn't block destroy
+      }
+    }
+  }
+
   reporter.phaseStart('provision', `Destroying ${opts.deploymentName} on ${deployment.cloud}`);
   await opts.provider.destroy(ledger);
   reporter.phaseDone('provision');
