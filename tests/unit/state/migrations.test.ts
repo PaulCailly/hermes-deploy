@@ -3,16 +3,16 @@ import { runMigrations, CURRENT_SCHEMA_VERSION } from '../../../src/state/migrat
 
 describe('runMigrations', () => {
   it('exports the current version constant', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(3);
+    expect(CURRENT_SCHEMA_VERSION).toBe(4);
   });
 
-  it('migrates a v1 state to v3', () => {
+  it('migrates a v1 state to v4', () => {
     const state = { schema_version: 1, deployments: {} };
     const migrated = runMigrations(state) as any;
-    expect(migrated.schema_version).toBe(3);
+    expect(migrated.schema_version).toBe(4);
   });
 
-  it('migrates a synthetic v0 state to v3', () => {
+  it('migrates a synthetic v0 state to v4', () => {
     // v0 had no schema_version field and stored deployments as a flat
     // array with per-entry `name` and a separate `aws`/`gcp` field
     // instead of cloud_resources.
@@ -34,7 +34,7 @@ describe('runMigrations', () => {
       ],
     };
     const migrated = runMigrations(v0) as any;
-    expect(migrated.schema_version).toBe(3);
+    expect(migrated.schema_version).toBe(4);
     expect(migrated.deployments.legacy).toBeDefined();
     expect(migrated.deployments.legacy.cloud).toBe('aws');
     expect(migrated.deployments.legacy.cloud_resources.instance_id).toBe('i-old');
@@ -42,6 +42,9 @@ describe('runMigrations', () => {
     expect(migrated.deployments.legacy.last_config_hash).toBe('sha256:migrated');
     // v3 migration adds last_nix_hash
     expect(migrated.deployments.legacy.last_nix_hash).toBe('sha256:unknown');
+    // v4 migration adds hermes_agent_rev and hermes_agent_tag
+    expect(migrated.deployments.legacy.hermes_agent_rev).toBe('unknown');
+    expect(migrated.deployments.legacy.hermes_agent_tag).toBe('');
   });
 
   it('throws on a future schema_version', () => {
@@ -56,11 +59,11 @@ describe('runMigrations', () => {
     );
   });
 
-  it('exposes CURRENT_SCHEMA_VERSION === 3 after the M4 bump', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(3);
+  it('exposes CURRENT_SCHEMA_VERSION === 4 after the v4 bump', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(4);
   });
 
-  it('migrates a v1 state file to v3 (v1→v2→v3)', () => {
+  it('migrates a v1 state file to v4 (v1→v2→v3→v4)', () => {
     const v1 = {
       schema_version: 1,
       deployments: {
@@ -86,13 +89,16 @@ describe('runMigrations', () => {
       },
     };
     const migrated = runMigrations(v1) as any;
-    expect(migrated.schema_version).toBe(3);
+    expect(migrated.schema_version).toBe(4);
     expect(migrated.deployments['m2-leftover'].cloud_resources.instance_id).toBe('i-1');
     // v3 migration adds last_nix_hash defaulting to 'sha256:unknown'
     expect(migrated.deployments['m2-leftover'].last_nix_hash).toBe('sha256:unknown');
+    // v4 migration adds hermes_agent_rev and hermes_agent_tag
+    expect(migrated.deployments['m2-leftover'].hermes_agent_rev).toBe('unknown');
+    expect(migrated.deployments['m2-leftover'].hermes_agent_tag).toBe('');
   });
 
-  it('migrates a v2 state file to v3, adding last_nix_hash', () => {
+  it('migrates a v2 state file to v4, adding last_nix_hash, hermes_agent_rev, hermes_agent_tag', () => {
     const v2 = {
       schema_version: 2,
       deployments: {
@@ -118,15 +124,54 @@ describe('runMigrations', () => {
       },
     };
     const migrated = runMigrations(v2) as any;
-    expect(migrated.schema_version).toBe(3);
+    expect(migrated.schema_version).toBe(4);
     expect(migrated.deployments['my-bot'].last_nix_hash).toBe('sha256:unknown');
     // Existing fields are preserved
     expect(migrated.deployments['my-bot'].last_config_hash).toBe('sha256:abc');
+    // v4 fields
+    expect(migrated.deployments['my-bot'].hermes_agent_rev).toBe('unknown');
+    expect(migrated.deployments['my-bot'].hermes_agent_tag).toBe('');
   });
 
-  it('is a no-op on already-current v3 state', () => {
-    const v3 = { schema_version: 3, deployments: {} };
-    const migrated = runMigrations(v3);
-    expect(migrated).toEqual(v3);
+  it('migrates a v3 state to v4, adding hermes_agent_rev and hermes_agent_tag', () => {
+    const v3 = {
+      schema_version: 3,
+      deployments: {
+        'my-agent': {
+          project_path: '/x',
+          cloud: 'gcp',
+          region: 'europe-west1',
+          created_at: '2026-04-09T00:00:00Z',
+          last_deployed_at: '2026-04-09T00:00:00Z',
+          last_config_hash: 'sha256:xyz',
+          last_nix_hash: 'sha256:abc123',
+          ssh_key_path: '/x',
+          age_key_path: '/x',
+          health: 'healthy',
+          instance_ip: '34.0.0.1',
+          cloud_resources: {
+            instance_name: 'inst-1',
+            static_ip_name: 'ip-1',
+            firewall_rule_names: ['fw-1'],
+            project_id: 'proj-1',
+            zone: 'europe-west1-b',
+          },
+        },
+      },
+    };
+    const migrated = runMigrations(v3) as any;
+    expect(migrated.schema_version).toBe(4);
+    // Existing fields preserved
+    expect(migrated.deployments['my-agent'].last_nix_hash).toBe('sha256:abc123');
+    expect(migrated.deployments['my-agent'].last_config_hash).toBe('sha256:xyz');
+    // v4 adds hermes_agent_rev and hermes_agent_tag
+    expect(migrated.deployments['my-agent'].hermes_agent_rev).toBe('unknown');
+    expect(migrated.deployments['my-agent'].hermes_agent_tag).toBe('');
+  });
+
+  it('is a no-op on already-current v4 state', () => {
+    const v4 = { schema_version: 4, deployments: {} };
+    const migrated = runMigrations(v4);
+    expect(migrated).toEqual(v4);
   });
 });

@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 /**
  * Forward migration functions keyed by TARGET version.
@@ -73,6 +73,18 @@ const migrations: Record<number, (input: unknown) => unknown> = {
       deployments[name] = { last_nix_hash: 'sha256:unknown', ...(dep as object) };
     }
     return { ...v2, schema_version: 3, deployments };
+  },
+  4: (input: unknown) => {
+    // v4 schema migration: adds hermes_agent_rev and hermes_agent_tag to
+    // each deployment to track which version of hermes-agent is deployed.
+    // hermes_agent_rev defaults to 'unknown' (git SHA not yet fetched),
+    // hermes_agent_tag defaults to '' (no matched release tag).
+    const v3 = input as { schema_version: number; deployments: Record<string, unknown> };
+    const deployments: Record<string, unknown> = {};
+    for (const [name, dep] of Object.entries(v3.deployments)) {
+      deployments[name] = { hermes_agent_rev: 'unknown', hermes_agent_tag: '', ...(dep as object) };
+    }
+    return { ...v3, schema_version: 4, deployments };
   },
 };
 
