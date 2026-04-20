@@ -156,6 +156,23 @@ export function InfraTab({ name, status, navigate }: InfraTabProps) {
         </div>
       )}
 
+      {/* Agent Version card */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="bg-[#161822] border border-[#2a2d3a] rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">
+            <i className="fa-solid fa-code-branch mr-2 text-indigo-500" />Hermes Agent
+          </h3>
+          <InfoRow
+            label="Revision"
+            value={(stored as any)?.hermes_agent_version?.lockedTag || (stored as any)?.hermes_agent_version?.lockedRev?.slice(0, 12) || '\u2014'}
+          />
+          <InfoRow
+            label="Lock Date"
+            value={(stored as any)?.hermes_agent_version?.lockedDate ? new Date((stored as any).hermes_agent_version.lockedDate).toLocaleDateString() : '\u2014'}
+          />
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-[#161822] border border-[#2a2d3a] rounded-lg p-4">
           <h3 className="text-sm font-semibold text-slate-200 mb-3">

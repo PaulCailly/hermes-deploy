@@ -39,6 +39,13 @@ export function SettingsPage() {
     refetchInterval: 60_000,
   });
 
+  const updatesQ = useQuery({
+    queryKey: ['update-check'],
+    queryFn: () => apiFetch<{ hermesDeploy: { current: string; latest: string; updateAvailable: boolean } }>('/api/updates'),
+    refetchInterval: 60_000,
+    retry: false,
+  });
+
   const [showToken, setShowToken] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pollInterval, setPollInterval] = useState(() => getStoredInterval());
@@ -167,6 +174,23 @@ export function SettingsPage() {
                 <span className="text-slate-500 text-sm">Loading…</span>
               ) : (
                 <code className="text-sm text-slate-300 font-mono">{infoQ.data?.version ?? 'unknown'}</code>
+              )
+            }
+          />
+          <Row
+            label="Latest"
+            value={
+              updatesQ.isLoading ? (
+                <span className="text-slate-500 text-sm">Loading...</span>
+              ) : updatesQ.data?.hermesDeploy.updateAvailable ? (
+                <span className="text-sm">
+                  <code className="text-indigo-400 font-mono">{updatesQ.data.hermesDeploy.latest}</code>
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded bg-indigo-900/30 text-indigo-400">update available</span>
+                </span>
+              ) : (
+                <span className="text-sm text-emerald-400">
+                  <i className="fa-solid fa-check mr-1" />up to date
+                </span>
               )
             }
           />

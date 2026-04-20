@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './lib/api';
 import { AppShell } from './components/layout/AppShell';
 import { ConnectionBanner } from './components/ConnectionBanner';
+import { UpdateBanner } from './components/UpdateBanner';
 import { OrgDashboard } from './features/dashboard/OrgDashboard';
 import { AgentList } from './features/agents/AgentList';
 import { AgentWorkspace } from './features/agent/AgentWorkspace';
@@ -82,6 +83,7 @@ export function App() {
         error={agentsError}
         onRetry={() => qc.invalidateQueries({ queryKey: ['agents'] })}
       />
+      <UpdateBanner />
       {renderPage()}
     </AppShell>
   );
