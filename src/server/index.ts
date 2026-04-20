@@ -17,6 +17,7 @@ import { logRoutes } from './routes/logs.js';
 import { sshRoutes } from './routes/ssh.js';
 import { agentDataRoutes } from './routes/agent-data.js';
 import { orgRoutes } from './routes/org.js';
+import { updateRoutes } from './routes/updates.js';
 
 export interface CreateServerOptions {
   host: string;
@@ -60,6 +61,7 @@ export async function createDashboardServer(opts: CreateServerOptions): Promise<
   await app.register(async (instance) => sshRoutes(instance));
   await app.register(async (instance) => agentDataRoutes(instance));
   await app.register(async (instance) => orgRoutes(instance));
+  await app.register(async (instance) => updateRoutes(instance));
 
   // Static SPA serving (must be last — has the wildcard fallback)
   const thisDir = dirname(fileURLToPath(import.meta.url));

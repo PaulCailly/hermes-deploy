@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { collectDeploymentSummaries } from '../../commands/ls.js';
 import { StateStore } from '../../state/store.js';
@@ -7,12 +8,16 @@ import { createSshSession } from '../../remote-ops/session.js';
 import { runDeploy } from '../../orchestrator/deploy.js';
 import { runUpdate } from '../../orchestrator/update.js';
 import { runDestroy } from '../../orchestrator/destroy.js';
+import { runUpgrade } from '../../orchestrator/upgrade.js';
 import { adoptDeployment } from '../../commands/adopt.js';
 import { generateSshKeypair } from '../../crypto/ssh-keygen.js';
 import { generateAgeKeypair } from '../../crypto/age-keygen.js';
 import { ensureSopsBootstrap } from '../../sops/bootstrap.js';
 import { waitForSshPort } from '../../remote-ops/wait-ssh.js';
 import { detectPublicIp } from '../../utils/public-ip.js';
+import { readHermesAgentVersion } from '../../remote-ops/read-flake-lock.js';
+import { runNixosRebuild } from '../../remote-ops/nixos-rebuild.js';
+import { pollHermesHealth } from '../../remote-ops/healthcheck.js';
 import type { ReporterBus } from '../reporter-bus.js';
 import type { SingleFlight } from '../singleflight.js';
 
@@ -63,6 +68,35 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
     const { collectDomainCheck } = await import('../../domain/collect-domain-check.js');
     const domain = await collectDomainCheck(deployment, live.state === 'running');
 
+    let hermesAgentVersion: { lockedRev: string; lockedDate: string; lockedTag?: string } | undefined;
+    if (live.state === 'running') {
+      try {
+        const privateKey = readFileSync(deployment.ssh_key_path, 'utf-8');
+        const session = await createSshSession({
+          host: deployment.instance_ip,
+          username: 'root',
+          privateKey,
+        });
+        try {
+          const version = await readHermesAgentVersion(session);
+          if (version) {
+            hermesAgentVersion = { lockedRev: version.lockedRev, lockedDate: version.lockedDate };
+          }
+        } finally {
+          await session.dispose();
+        }
+      } catch {
+        // SSH failed — fall back to stored rev
+      }
+    }
+    if (!hermesAgentVersion && deployment.hermes_agent_rev !== 'unknown') {
+      hermesAgentVersion = {
+        lockedRev: deployment.hermes_agent_rev,
+        lockedDate: deployment.last_deployed_at,
+        lockedTag: deployment.hermes_agent_tag || undefined,
+      };
+    }
+
     return {
       name,
       found: true,
@@ -76,6 +110,7 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
         health: deployment.health,
         ssh_key_path: deployment.ssh_key_path,
         age_key_path: deployment.age_key_path,
+        hermes_agent_version: hermesAgentVersion,
       },
       live,
       domain,
@@ -255,6 +290,63 @@ export async function deploymentRoutes(app: FastifyInstance, deps: Deps): Promis
       runDestroy({
         deploymentName: name,
         provider,
+        reporter,
+      }).then(
+        () => { bus.finish(jobId); singleFlight.release(name, jobId); },
+        (err) => { bus.fail(jobId, (err as Error).message); singleFlight.release(name, jobId); },
+      );
+
+      reply.code(202).send({ jobId });
+    },
+  );
+
+  // POST /api/deployments/:name/upgrade
+  app.post<{ Params: { name: string } }>(
+    '/api/deployments/:name/upgrade',
+    async (request, reply) => {
+      const { name } = request.params;
+
+      const existingJob = singleFlight.isRunning(name);
+      if (existingJob) {
+        reply.code(409).send({ error: 'busy', currentJobId: existingJob });
+        return;
+      }
+
+      const paths = getStatePaths();
+      const store = new StateStore(paths);
+      const state = await store.read();
+      const deployment = state.deployments[name];
+      if (!deployment) {
+        reply.code(404).send({ error: `deployment "${name}" not found` });
+        return;
+      }
+
+      const { jobId, reporter } = bus.createJob(name, 'upgrade');
+      if (!singleFlight.acquire(name, jobId)) {
+        reply.code(409).send({ error: 'busy', currentJobId: singleFlight.isRunning(name) });
+        return;
+      }
+
+      const privateKeyContent = readFileSync(deployment.ssh_key_path, 'utf-8');
+
+      runUpgrade({
+        deploymentName: name,
+        sessionFactory: () =>
+          createSshSession({
+            host: deployment.instance_ip,
+            username: 'root',
+            privateKey: privateKeyContent,
+          }),
+        nixosRebuildRunner: runNixosRebuild,
+        healthchecker: (session) => pollHermesHealth(session),
+        stateUpdater: async (rev, tag) => {
+          await store.update((s) => {
+            const d = s.deployments[name]!;
+            d.hermes_agent_rev = rev;
+            d.hermes_agent_tag = tag;
+            d.last_deployed_at = new Date().toISOString();
+          });
+        },
         reporter,
       }).then(
         () => { bus.finish(jobId); singleFlight.release(name, jobId); },
