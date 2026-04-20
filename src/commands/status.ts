@@ -3,9 +3,16 @@ import { createCloudProvider } from '../cloud/factory.js';
 import { getStatePaths } from '../state/paths.js';
 import { StateStore } from '../state/store.js';
 import { collectDomainCheck } from '../domain/collect-domain-check.js';
+import { readHermesAgentVersion } from '../remote-ops/read-flake-lock.js';
+import { createSshSession } from '../remote-ops/session.js';
+import { readFileSync } from 'node:fs';
+import { checkCliUpdate } from '../updates/cli-update-check.js';
+import { join } from 'node:path';
 import type { Deployment } from '../schema/state-toml.js';
 import type { InstanceStatus } from '../cloud/core.js';
 import type { DomainCheckDto } from '../schema/dto.js';
+
+declare const HERMES_DEPLOY_VERSION: string;
 
 export interface StatusOptions {
   name?: string;
@@ -107,6 +114,28 @@ export async function statusCommand(opts: StatusOptions): Promise<void> {
   console.log(`  Deployed at: ${deployment.last_deployed_at}`);
   console.log(`  SSH key:     ${deployment.ssh_key_path}`);
 
+  // Hermes Agent version (from remote flake.lock)
+  if (live.state === 'running') {
+    try {
+      const privateKey = readFileSync(deployment.ssh_key_path, 'utf-8');
+      const sshSession = await createSshSession({
+        host: deployment.instance_ip, username: 'root', privateKey,
+      });
+      try {
+        const version = await readHermesAgentVersion(sshSession);
+        if (version) {
+          const shortRev = version.lockedRev.slice(0, 12);
+          const date = version.lockedDate.slice(0, 10);
+          console.log(`  Agent:       ${shortRev} (${date})`);
+        }
+      } finally {
+        await sshSession.dispose();
+      }
+    } catch {
+      // SSH failed — skip agent version
+    }
+  }
+
   if (domainCheck) {
     const c = domainCheck.checks;
     console.log('');
@@ -116,5 +145,20 @@ export async function statusCommand(opts: StatusOptions): Promise<void> {
     console.log(`  nginx:       ${c.nginx.ok ? 'ok' : 'FAIL'} — ${c.nginx.active ? 'active' : 'inactive'}, config ${c.nginx.configValid ? 'valid' : 'invalid'}`);
     console.log(`  Upstream:    ${c.upstream.ok ? 'ok' : 'FAIL'} — ${c.upstream.httpStatus !== null ? `HTTP ${c.upstream.httpStatus}` : '(unreachable)'}`);
     console.log(`  HTTPS:       ${c.https.ok ? 'ok' : 'FAIL'} — ${c.https.httpStatus !== null ? `HTTP ${c.https.httpStatus}` : '(unreachable)'}`);
+  }
+
+  // npm update notice (non-blocking, best-effort)
+  try {
+    const updatePaths = getStatePaths();
+    const cacheFile = join(updatePaths.configDir, 'npm-update-check.json');
+    const check = await checkCliUpdate(HERMES_DEPLOY_VERSION, cacheFile);
+    if (check.updateAvailable) {
+      console.error(
+        `\nUpdate available: @paulcailly/hermes-deploy@${check.latest} (current: ${check.current})` +
+        `\nRun: npm install -g @paulcailly/hermes-deploy@latest`,
+      );
+    }
+  } catch {
+    // Non-fatal
   }
 }

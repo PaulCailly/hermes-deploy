@@ -3,6 +3,8 @@ import { getStatePaths } from '../state/paths.js';
 import { createCloudProvider } from '../cloud/factory.js';
 import type { CloudProvider, ResourceLedger } from '../cloud/core.js';
 
+declare const HERMES_DEPLOY_VERSION: string;
+
 export interface DeploymentSummary {
   name: string;
   cloud: 'aws' | 'gcp';
@@ -13,6 +15,8 @@ export interface DeploymentSummary {
   /** Live state from provider.status() — only present when live=true. */
   liveState?: string;
   livePublicIp?: string | null;
+  hermesAgentTag?: string;
+  hermesAgentRev?: string;
 }
 
 export interface CollectOptions {
@@ -71,6 +75,8 @@ export async function collectDeploymentSummaries(
         const live = await provider.status(ledger);
         summary.liveState = live.state;
         summary.livePublicIp = live.publicIp;
+        summary.hermesAgentTag = (d as any).hermes_agent_tag || '';
+        summary.hermesAgentRev = (d as any).hermes_agent_rev || 'unknown';
       } catch {
         summary.liveState = 'error';
       }
@@ -109,16 +115,14 @@ export async function lsCommand(opts: {
     return;
   }
 
-  const header = ['NAME', 'CLOUD', 'REGION', 'IP', 'STORED', 'LIVE', 'LAST DEPLOYED'];
-  const rows = summaries.map(s => [
-    s.name,
-    s.cloud,
-    s.region,
-    s.instanceIp,
-    s.storedHealth,
-    s.liveState ?? '-',
-    s.lastDeployedAt,
-  ]);
+  const header = ['NAME', 'CLOUD', 'REGION', 'IP', 'AGENT', 'STORED', 'LIVE', 'LAST DEPLOYED'];
+  const rows = summaries.map(s => {
+    const agentLabel = s.hermesAgentTag || (s.hermesAgentRev && s.hermesAgentRev !== 'unknown' ? s.hermesAgentRev.slice(0, 10) : '-');
+    return [
+      s.name, s.cloud, s.region, s.instanceIp, agentLabel,
+      s.storedHealth, s.liveState ?? '-', s.lastDeployedAt,
+    ];
+  });
   const widths = header.map((h, i) =>
     Math.max(h.length, ...rows.map(r => (r[i] ?? '').length)),
   );
@@ -127,4 +131,22 @@ export async function lsCommand(opts: {
   console.log(line(header));
   console.log(widths.map(w => '-'.repeat(w)).join('  '));
   for (const r of rows) console.log(line(r));
+
+  // npm update notice
+  try {
+    const { checkCliUpdate } = await import('../updates/cli-update-check.js');
+    const { getStatePaths } = await import('../state/paths.js');
+    const { join } = await import('node:path');
+    const updatePaths = getStatePaths();
+    const cacheFile = join(updatePaths.configDir, 'npm-update-check.json');
+    const check = await checkCliUpdate(HERMES_DEPLOY_VERSION, cacheFile);
+    if (check.updateAvailable) {
+      console.error(
+        `\nUpdate available: @paulcailly/hermes-deploy@${check.latest} (current: ${check.current})` +
+        `\nRun: npm install -g @paulcailly/hermes-deploy@latest`,
+      );
+    }
+  } catch {
+    // Non-fatal
+  }
 }
