@@ -5,6 +5,7 @@ export type PhaseId =
   | 'dns'
   | 'wait-ssh'
   | 'bootstrap'
+  | 'flake-update'
   | 'healthcheck';
 
 export interface Reporter {

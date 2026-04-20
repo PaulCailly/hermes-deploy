@@ -9,7 +9,7 @@ const JOB_TTL_MS = 10 * 60 * 1000; // 10 minutes
 interface Job {
   jobId: string;
   deploymentName: string;
-  kind: 'up' | 'update' | 'destroy' | 'adopt';
+  kind: 'up' | 'update' | 'destroy' | 'adopt' | 'upgrade';
   status: 'running' | 'done' | 'failed';
   startedAt: string;
   finishedAt?: string;
