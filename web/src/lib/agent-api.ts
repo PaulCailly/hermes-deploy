@@ -4,7 +4,7 @@ import { apiFetch } from './api';
 import { createWs } from './ws';
 import type {
   AgentStats, AgentSession, AgentMessage, AgentSkillCategory,
-  AgentCronJob, AgentGatewayState,
+  AgentCronJob, AgentGatewayState, AgentWebhooksState, AgentPlugin,
 } from './agent-types';
 
 const REFETCH_MS = 15_000;
@@ -82,6 +82,24 @@ export function useAgentGateway(name: string) {
     queryKey: ['agent-gateway', name],
     queryFn: () => apiFetch<AgentGatewayState>(`/api/agents/${encodeURIComponent(name)}/gateway`),
     refetchInterval: REFETCH_MS,
+    retry: false,
+  });
+}
+
+export function useAgentWebhooks(name: string) {
+  return useQuery({
+    queryKey: ['agent-webhooks', name],
+    queryFn: () => apiFetch<AgentWebhooksState>(`/api/agents/${encodeURIComponent(name)}/webhooks`),
+    refetchInterval: REFETCH_MS,
+    retry: false,
+  });
+}
+
+export function useAgentPlugins(name: string) {
+  return useQuery({
+    queryKey: ['agent-plugins', name],
+    queryFn: () => apiFetch<AgentPlugin[]>(`/api/agents/${encodeURIComponent(name)}/plugins`),
+    refetchInterval: 30_000,
     retry: false,
   });
 }

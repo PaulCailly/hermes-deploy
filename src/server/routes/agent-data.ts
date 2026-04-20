@@ -7,6 +7,7 @@ import {
   writeRemoteFile,
   runRemoteCommand,
   withAgentLock,
+  HERMES_HOME,
 } from '../agent-data-source.js';
 import { StateStore } from '../../state/store.js';
 import { getStatePaths } from '../../state/paths.js';
@@ -410,6 +411,245 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  // ---------- GET /api/agents/:name/webhooks ----------
+  app.get<{ Params: { name: string } }>('/api/agents/:name/webhooks', async (req, reply) => {
+    const { name } = req.params;
+    if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+
+    // 1. Check webhook health (the platform HTTP server on port 8644)
+    let healthy = false;
+    try {
+      const healthRes = await runRemoteCommand(name, 'curl -sf http://localhost:8644/health 2>/dev/null');
+      healthy = healthRes.exitCode === 0;
+    } catch { /* not reachable */ }
+
+    // 2. Read config.yaml for static webhook routes
+    interface WebhookRouteConfig {
+      events?: string[];
+      action_filter?: string[];
+      deliver?: string;
+      deliver_extra?: Record<string, string>;
+      prompt?: string;
+      skills?: string[];
+    }
+
+    let configRoutes: Record<string, WebhookRouteConfig> = {};
+    try {
+      const parseRes = await runRemoteCommand(
+        name,
+        `PY=$(grep -ho "/nix/store/[^']*/bin/python3" /nix/store/*/bin/hermes 2>/dev/null | head -1) && cat ${HERMES_HOME}/config.yaml | $PY -c "
+import sys, yaml, json
+cfg = yaml.safe_load(sys.stdin)
+wh = cfg.get('platforms', {}).get('webhook', {}).get('extra', {}).get('routes', {})
+json.dump(wh, sys.stdout)
+"`,
+      );
+      if (parseRes.exitCode === 0 && parseRes.stdout) {
+        configRoutes = JSON.parse(parseRes.stdout);
+      }
+    } catch { /* no config or parse error */ }
+
+    // 3. Read dynamic webhook subscriptions
+    const dynamicSubs = await readRemoteJson<Record<string, {
+      events?: string[];
+      action_filter?: string[];
+      deliver?: string;
+      deliver_extra?: Record<string, string>;
+      prompt?: string;
+      skills?: string[];
+      created_at?: string;
+    }>>(name, `${HERMES_HOME}/webhook_subscriptions.json`);
+
+    // 4. Merge routes
+    const routes = [
+      ...Object.entries(configRoutes).map(([rname, r]) => ({
+        name: rname,
+        events: r.events ?? [],
+        actionFilter: r.action_filter,
+        deliver: r.deliver ?? 'log',
+        deliverExtra: r.deliver_extra,
+        prompt: r.prompt,
+        skills: r.skills,
+        source: 'config' as const,
+      })),
+      ...Object.entries(dynamicSubs ?? {}).map(([rname, r]) => ({
+        name: rname,
+        events: r.events ?? [],
+        actionFilter: r.action_filter,
+        deliver: r.deliver ?? 'log',
+        deliverExtra: r.deliver_extra,
+        prompt: r.prompt,
+        skills: r.skills,
+        source: 'dynamic' as const,
+        createdAt: r.created_at,
+      })),
+    ];
+
+    // 5. Query recent webhook sessions from state.db with message details
+    const recentDeliveries: Array<{
+      id: string; route: string; event: string; action: string;
+      status: string; timestamp: string; sessionId?: string;
+      messageCount: number; endReason: string | null;
+      detail?: string; duration?: number;
+    }> = [];
+    try {
+      const rows = await runSqliteJson<{
+        id: string;
+        source: string | null;
+        started_at: number;
+        ended_at: number | null;
+        end_reason: string | null;
+        title: string | null;
+        message_count: number | null;
+      }>(
+        name,
+        `SELECT id, source, started_at, ended_at, end_reason, title, message_count
+         FROM sessions
+         WHERE source LIKE '%webhook%'
+         ORDER BY started_at DESC
+         LIMIT 50`,
+      );
+      for (const row of rows) {
+        const parts = (row.source ?? '').split(':');
+        const ts = typeof row.started_at === 'number'
+          ? new Date(row.started_at * 1000).toISOString()
+          : String(row.started_at);
+        const duration = row.ended_at && row.started_at
+          ? Math.round((row.ended_at - row.started_at) * 10) / 10
+          : undefined;
+        const isRunning = !row.ended_at;
+        const status = isRunning ? 'running' : row.end_reason === 'error' ? 'error' : 'completed';
+        recentDeliveries.push({
+          id: parts.length > 2 ? parts[2] : row.id,
+          route: parts.length > 1 ? parts[1] : 'webhook',
+          event: row.title ?? 'webhook',
+          action: '',
+          status,
+          timestamp: ts,
+          sessionId: row.id,
+          messageCount: row.message_count ?? 0,
+          endReason: row.end_reason,
+          duration,
+        });
+      }
+
+      // Extract action/detail from first message of each recent session
+      if (recentDeliveries.length > 0) {
+        const sessionIds = recentDeliveries.slice(0, 20).map(d => d.sessionId).filter(Boolean);
+        const detailRes = await runRemoteCommand(
+          name,
+          `PY=$(grep -ho "/nix/store/[^']*/bin/python3" /nix/store/*/bin/hermes 2>/dev/null | head -1) && $PY << 'PYEOF'
+import json, os
+sids = ${JSON.stringify(sessionIds)}
+for sid in sids:
+    path = f"/var/lib/hermes/.hermes/sessions/session_{sid}.json"
+    if not os.path.exists(path):
+        print(json.dumps({"sid": sid}))
+        continue
+    try:
+        with open(path) as f:
+            d = json.load(f)
+        msgs = d.get("messages", [])
+        if not msgs:
+            print(json.dumps({"sid": sid}))
+            continue
+        content = msgs[0].get("content", "")
+        info = {"sid": sid}
+        for line in content.split("\\n"):
+            if line.startswith("Action: "):
+                info["action"] = line[8:].strip()
+            elif line.startswith("Moved to: "):
+                info["moved_to"] = line[10:].strip()
+            elif line.startswith("Moved from: "):
+                info["moved_from"] = line[12:].strip()
+            elif line.startswith("Field changed: "):
+                info["field"] = line[15:].strip()
+            elif line.startswith("Content type: "):
+                info["content_type"] = line[14:].strip()
+        # Get last assistant message as detail
+        for m in reversed(msgs):
+            if m.get("role") == "assistant":
+                c = m.get("content", "")
+                if c and len(c) < 500:
+                    info["response"] = c[:200]
+                break
+        print(json.dumps(info))
+    except:
+        print(json.dumps({"sid": sid}))
+PYEOF`,
+        );
+        if (detailRes.exitCode === 0 && detailRes.stdout) {
+          const details = new Map<string, Record<string, string>>();
+          for (const line of detailRes.stdout.trim().split('\n')) {
+            try {
+              const d = JSON.parse(line);
+              if (d.sid) details.set(d.sid, d);
+            } catch { /* skip */ }
+          }
+          for (const delivery of recentDeliveries) {
+            const d = details.get(delivery.sessionId ?? '');
+            if (d) {
+              delivery.action = d.action ?? '';
+              if (d.moved_to) {
+                delivery.detail = `${d.moved_from ?? '?'} → ${d.moved_to}`;
+              }
+              if (d.response) {
+                delivery.event = d.response.startsWith('skip') ? 'skipped' : delivery.event;
+              }
+            }
+          }
+        }
+      }
+    } catch { /* state.db may not exist */ }
+
+    return { healthy, routes, recentDeliveries };
+  });
+
+  // ---------- GET /api/agents/:name/plugins ----------
+  app.get<{ Params: { name: string } }>('/api/agents/:name/plugins', async (req, reply) => {
+    const { name } = req.params;
+    if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+
+    try {
+      const res = await runRemoteCommand(
+        name,
+        `PY=$(grep -ho "/nix/store/[^']*/bin/python3" /nix/store/*/bin/hermes 2>/dev/null | head -1) && su - hermes -s /bin/sh -c "$PY -c \\"
+import json, os, glob
+try:
+    from hermes_cli.plugins import discover_plugins, get_plugin_manager
+    discover_plugins()
+    mgr = get_plugin_manager()
+    plugins = mgr.list_plugins()
+    # Enrich with source files
+    plugins_dir = os.path.expanduser('~/.hermes/plugins')
+    for p in plugins:
+        pname = p['name']
+        pdir = os.path.join(plugins_dir, pname)
+        files = {}
+        if os.path.isdir(pdir):
+            for fpath in sorted(glob.glob(os.path.join(pdir, '**'), recursive=True)):
+                if os.path.isfile(fpath):
+                    relpath = os.path.relpath(fpath, pdir)
+                    try:
+                        with open(fpath) as f:
+                            files[relpath] = f.read()
+                    except:
+                        files[relpath] = '(could not read)'
+        p['files'] = files
+    json.dump(plugins, __import__('sys').stdout)
+except Exception as e:
+    json.dump([], __import__('sys').stdout)
+\\""`,
+      );
+      if (res.exitCode === 0 && res.stdout) {
+        return JSON.parse(res.stdout);
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  });
 
   // ---------- WS /ws/agents/:name/sessions/:sid/messages ----------
   // Live stream of messages for an active session. Server polls the DB every

@@ -93,3 +93,48 @@ export interface AgentPlatformState {
   sessionCount: number;
   trafficPercent: number;
 }
+
+export interface AgentWebhookRoute {
+  name: string;
+  events: string[];
+  actionFilter?: string[];
+  deliver: string;
+  deliverExtra?: Record<string, string>;
+  prompt?: string;
+  skills?: string[];
+  source: 'config' | 'dynamic';
+  createdAt?: string;
+}
+
+export interface AgentWebhookDelivery {
+  id: string;
+  route: string;
+  event: string;
+  action: string;
+  status: 'completed' | 'running' | 'error' | 'skipped';
+  timestamp: string;
+  sessionId?: string;
+  messageCount: number;
+  endReason: string | null;
+  detail?: string;
+  duration?: number;
+}
+
+export interface AgentWebhooksState {
+  healthy: boolean;
+  routes: AgentWebhookRoute[];
+  recentDeliveries: AgentWebhookDelivery[];
+}
+
+export interface AgentPlugin {
+  name: string;
+  version: string;
+  description: string;
+  source: 'user' | 'project' | 'pip';
+  enabled: boolean;
+  tools: number;
+  hooks: number;
+  commands: number;
+  error: string | null;
+  files: Record<string, string>;
+}

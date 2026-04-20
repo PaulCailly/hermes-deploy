@@ -8,6 +8,8 @@ import { AnalyticsTab } from './AnalyticsTab';
 import { SkillsTab } from './SkillsTab';
 import { CronTab } from './CronTab';
 import { GatewayTab } from './GatewayTab';
+import { WebhooksTab } from './WebhooksTab';
+import { PluginsTab } from './PluginsTab';
 import { InfraTab } from './InfraTab';
 import { ConfigTab } from '../config/ConfigTab';
 import { LogsTab } from '../logs/LogsTab';
@@ -41,6 +43,8 @@ export function AgentWorkspace({ name, tab, navigate }: AgentWorkspaceProps) {
       case 'skills':    return <SkillsTab name={name} />;
       case 'cron':      return <CronTab name={name} />;
       case 'gateway':   return <GatewayTab name={name} />;
+      case 'webhooks':  return <WebhooksTab name={name} />;
+      case 'plugins':   return <PluginsTab name={name} />;
       case 'infra':     return <InfraTab name={name} status={status} navigate={navigate} />;
       case 'config':    return <ConfigTab name={name} />;
       case 'logs':      return <LogsTab name={name} />;

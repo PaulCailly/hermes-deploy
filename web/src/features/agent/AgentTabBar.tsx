@@ -12,6 +12,8 @@ const operationTabs: { id: AgentTab; label: string }[] = [
   { id: 'skills', label: 'Skills' },
   { id: 'cron', label: 'Cron' },
   { id: 'gateway', label: 'Gateway' },
+  { id: 'webhooks', label: 'Webhooks' },
+  { id: 'plugins', label: 'Plugins' },
 ];
 
 const infraTabs: { id: AgentTab; label: string }[] = [

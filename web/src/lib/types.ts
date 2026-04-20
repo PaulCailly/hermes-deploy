@@ -1,5 +1,5 @@
 export const AGENT_TABS = [
-  'overview', 'sessions', 'analytics', 'skills', 'cron', 'gateway',
+  'overview', 'sessions', 'analytics', 'skills', 'cron', 'gateway', 'webhooks', 'plugins',
   'infra', 'config', 'logs', 'ssh', 'secrets',
 ] as const;
 
