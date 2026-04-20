@@ -42,7 +42,7 @@ function PluginCard({ plugin }: { plugin: AgentPlugin }) {
       {/* Header */}
       <button
         className="w-full flex items-center gap-3 p-4 text-left hover:bg-[#1a1c2e] transition-colors"
-        onClick={() => { setExpanded(!expanded); if (!expanded && fileNames.length > 0 && !activeFile) setActiveFile(fileNames[0]); }}
+        onClick={() => { setExpanded(!expanded); if (!expanded && fileNames.length > 0 && !activeFile) setActiveFile(fileNames[0] ?? null); }}
       >
         <i className="fa-solid fa-puzzle-piece text-indigo-500 text-base" />
         <div className="flex-1 min-w-0">
