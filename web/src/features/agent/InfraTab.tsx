@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/api';
 import { JobDrawer } from '../jobs/JobDrawer';
 import type { StatusPayloadDto, DomainCheckDto } from '@hermes/dto';
@@ -84,6 +85,67 @@ function DomainCard({ domain }: { domain: DomainCheckDto }) {
   );
 }
 
+function AgentVersionCard({ stored }: { stored: StatusPayloadDto['stored'] }) {
+  const agentVersion = (stored as any)?.hermes_agent_version;
+  const lockedDate = agentVersion?.lockedDate;
+
+  const { data } = useQuery({
+    queryKey: ['update-check'],
+    queryFn: () => apiFetch<{ hermesAgent: { latest: { tag: string; name: string; publishedAt: string } | null } }>('/api/updates'),
+    refetchInterval: 60_000,
+    retry: false,
+  });
+
+  const latest = data?.hermesAgent.latest;
+
+  let statusLabel: React.ReactNode = null;
+  if (lockedDate && latest) {
+    const lockedTime = new Date(lockedDate).getTime();
+    const latestTime = new Date(latest.publishedAt).getTime();
+    if (lockedTime >= latestTime) {
+      statusLabel = (
+        <span className="text-xs px-2 py-0.5 rounded bg-emerald-900/30 text-emerald-400">
+          up to date
+        </span>
+      );
+    } else {
+      statusLabel = (
+        <span className="text-xs px-2 py-0.5 rounded bg-indigo-900/30 text-indigo-400">
+          update available
+        </span>
+      );
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-4 mb-6">
+      <div className="bg-[#161822] border border-[#2a2d3a] rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-3">
+          <i className="fa-solid fa-code-branch mr-2 text-indigo-500" />Hermes Agent
+        </h3>
+        <InfoRow
+          label="Revision"
+          value={agentVersion?.lockedTag || agentVersion?.lockedRev?.slice(0, 12) || '\u2014'}
+        />
+        <InfoRow
+          label="Lock Date"
+          value={lockedDate ? new Date(lockedDate).toLocaleDateString() : '\u2014'}
+        />
+        {latest && (
+          <InfoRow
+            label="Latest Release"
+            value={latest.name}
+          />
+        )}
+        <div className="flex justify-between items-center py-1.5">
+          <span className="text-slate-500 text-sm">Status</span>
+          {statusLabel ?? <span className="text-slate-500 text-sm">{'\u2014'}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function InfraTab({ name, status, navigate }: InfraTabProps) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -157,21 +219,7 @@ export function InfraTab({ name, status, navigate }: InfraTabProps) {
       )}
 
       {/* Agent Version card */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-[#161822] border border-[#2a2d3a] rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-slate-200 mb-3">
-            <i className="fa-solid fa-code-branch mr-2 text-indigo-500" />Hermes Agent
-          </h3>
-          <InfoRow
-            label="Revision"
-            value={(stored as any)?.hermes_agent_version?.lockedTag || (stored as any)?.hermes_agent_version?.lockedRev?.slice(0, 12) || '\u2014'}
-          />
-          <InfoRow
-            label="Lock Date"
-            value={(stored as any)?.hermes_agent_version?.lockedDate ? new Date((stored as any).hermes_agent_version.lockedDate).toLocaleDateString() : '\u2014'}
-          />
-        </div>
-      </div>
+      <AgentVersionCard stored={stored} />
 
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-[#161822] border border-[#2a2d3a] rounded-lg p-4">
