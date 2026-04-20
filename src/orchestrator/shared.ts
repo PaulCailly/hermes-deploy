@@ -6,6 +6,7 @@ import {
   generateHermesNix,
 } from '../nix-gen/generate.js';
 import { runNixosRebuild } from '../remote-ops/nixos-rebuild.js';
+import { readHermesAgentVersion } from '../remote-ops/read-flake-lock.js';
 import { pollHermesHealth } from '../remote-ops/healthcheck.js';
 import { computeConfigHash } from '../state/hash.js';
 import { StateStore } from '../state/store.js';
@@ -70,7 +71,7 @@ export interface BootstrapArgs {
  * mechanics, only the surrounding context (provision vs reconcile)
  * differs between them.
  */
-export async function uploadAndRebuild(args: BootstrapArgs): Promise<void> {
+export async function uploadAndRebuild(args: BootstrapArgs): Promise<{ lockedRev?: string }> {
   const { session, projectDir, config, ageKeyPath, reporter } = args;
   const flakeNix = generateFlakeNix();
   const configurationNix = generateConfigurationNix(config, args.sshPublicKey);
@@ -114,6 +115,19 @@ export async function uploadAndRebuild(args: BootstrapArgs): Promise<void> {
   if (!rebuild.success) {
     throw new Error(`nixos-rebuild failed:\n${rebuild.tail.join('\n')}`);
   }
+
+  // Read the updated flake.lock to capture the hermes-agent revision.
+  try {
+    const freshSession = await args.sessionFactory();
+    try {
+      const version = await readHermesAgentVersion(freshSession);
+      return { lockedRev: version?.lockedRev };
+    } finally {
+      await freshSession.dispose();
+    }
+  } catch {
+    return {};
+  }
 }
 
 export interface HealthcheckArgs {
@@ -124,6 +138,7 @@ export interface HealthcheckArgs {
   tomlPath: string;
   config: HermesTomlConfig;
   healthcheckTimeoutMs?: number;
+  hermesAgentRev?: string;
 }
 
 /**
@@ -184,6 +199,9 @@ export async function recordConfigAndHealthcheck(
     d.last_config_hash = configHash;
     d.last_nix_hash = nixHash;
     d.last_deployed_at = new Date().toISOString();
+    if (args.hermesAgentRev) {
+      d.hermes_agent_rev = args.hermesAgentRev;
+    }
   });
 
   const health = await pollHermesHealth(session, { timeoutMs: healthcheckTimeoutMs });

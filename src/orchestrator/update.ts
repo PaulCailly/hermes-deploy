@@ -189,7 +189,7 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
     // root SSH access is lost on GCE (and harmlessly redundant on AWS).
     const sshPubKeyPath = `${deployment.ssh_key_path}.pub`;
     const sshPublicKey = existsSync(sshPubKeyPath) ? readFileSync(sshPubKeyPath, 'utf-8').trim() : undefined;
-    await uploadAndRebuild({
+    const rebuildResult = await uploadAndRebuild({
       session,
       sessionFactory: () => opts.sessionFactory(deployment.instance_ip, readFileSync(deployment.ssh_key_path, 'utf-8')),
       projectDir: deployment.project_path,
@@ -210,6 +210,7 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
       tomlPath,
       config,
       healthcheckTimeoutMs: opts.healthcheckTimeoutMs,
+      hermesAgentRev: rebuildResult.lockedRev,
     });
 
     if (health.health === 'unhealthy') {

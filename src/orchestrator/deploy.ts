@@ -214,7 +214,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   const privateKeyContent = readFileSync(sshKeyPath, 'utf-8');
   const session = await opts.sessionFactory(instance.publicIp, privateKeyContent);
   try {
-    await uploadAndRebuild({
+    const rebuildResult = await uploadAndRebuild({
       session,
       sessionFactory: () => opts.sessionFactory(instance.publicIp, readFileSync(sshKeyPath, 'utf-8')),
       projectDir: opts.projectDir,
@@ -235,6 +235,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
       tomlPath,
       config,
       healthcheckTimeoutMs: opts.healthcheckTimeoutMs,
+      hermesAgentRev: rebuildResult.lockedRev,
     });
 
     if (health.health === 'unhealthy') {
