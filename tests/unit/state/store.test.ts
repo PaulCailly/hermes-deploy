@@ -23,7 +23,7 @@ describe('StateStore', () => {
 
   it('returns an empty state when the file does not exist', async () => {
     const state = await store.read();
-    expect(state.schema_version).toBe(3);
+    expect(state.schema_version).toBe(4);
     expect(state.deployments).toEqual({});
   });
 
@@ -85,6 +85,8 @@ function makeDeployment(name = 'test') {
     age_key_path: `/x/${name}`,
     health: 'unknown' as const,
     instance_ip: '0.0.0.0',
+    hermes_agent_rev: 'unknown',
+    hermes_agent_tag: '',
     cloud_resources: {
       instance_id: 'i-1',
       security_group_id: 'sg-1',

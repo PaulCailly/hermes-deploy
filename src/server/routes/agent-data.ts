@@ -521,8 +521,8 @@ json.dump(wh, sys.stdout)
         const isRunning = !row.ended_at;
         const status = isRunning ? 'running' : row.end_reason === 'error' ? 'error' : 'completed';
         recentDeliveries.push({
-          id: parts.length > 2 ? parts[2] : row.id,
-          route: parts.length > 1 ? parts[1] : 'webhook',
+          id: parts.length > 2 ? (parts[2] ?? row.id) : row.id,
+          route: parts.length > 1 ? (parts[1] ?? 'webhook') : 'webhook',
           event: row.title ?? 'webhook',
           action: '',
           status,

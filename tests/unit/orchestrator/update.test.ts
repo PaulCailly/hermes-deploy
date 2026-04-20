@@ -106,6 +106,8 @@ secrets_file = "./secrets.env.enc"
         age_key_path: join(configDir, 'hermes-deploy/age_keys/test'),
         health: 'healthy',
         instance_ip: '203.0.113.42',
+        hermes_agent_rev: 'unknown',
+        hermes_agent_tag: '',
         cloud_resources: {
           instance_id: 'i-1',
           security_group_id: 'sg-1',

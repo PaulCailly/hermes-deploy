@@ -65,6 +65,8 @@ describe.skipIf(!sopsAvailable)('secret subcommands', () => {
         age_key_path: ageKeyPath,
         health: 'healthy',
         instance_ip: '0.0.0.0',
+        hermes_agent_rev: 'unknown',
+        hermes_agent_tag: '',
         cloud_resources: {
           instance_id: 'i-1',
           security_group_id: 'sg-1',

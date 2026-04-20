@@ -150,6 +150,8 @@ export async function adoptDeployment(opts: AdoptOptions): Promise<AdoptResult> 
       age_key_path: ageKeyPath,
       health: existing?.health ?? 'unknown',
       instance_ip: publicIp,
+      hermes_agent_rev: 'unknown',
+      hermes_agent_tag: '',
       cloud_resources: {
         instance_id: r.instance_id ?? '',
         security_group_id: r.security_group_id ?? '',
@@ -172,6 +174,8 @@ export async function adoptDeployment(opts: AdoptOptions): Promise<AdoptResult> 
       age_key_path: ageKeyPath,
       health: existing?.health ?? 'unknown',
       instance_ip: publicIp,
+      hermes_agent_rev: 'unknown',
+      hermes_agent_tag: '',
       cloud_resources: {
         instance_name: r.instance_name ?? '',
         static_ip_name: r.static_ip_name ?? '',

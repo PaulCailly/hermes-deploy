@@ -59,6 +59,8 @@ describe('statusCommand', () => {
         age_key_path: '/tmp/age',
         health: 'healthy',
         instance_ip: '203.0.113.1',
+        hermes_agent_rev: 'unknown',
+        hermes_agent_tag: '',
         cloud_resources: {
           instance_id: 'i-1',
           security_group_id: 'sg-1',
