@@ -18,7 +18,7 @@ export class StateStore {
 
   async read(): Promise<StateToml> {
     if (!existsSync(this.paths.stateFile)) {
-      return { schema_version: 3, deployments: {} };
+      return { schema_version: 4, deployments: {} };
     }
     const raw = readFileSync(this.paths.stateFile, 'utf-8');
     const parsed = parseToml(raw);

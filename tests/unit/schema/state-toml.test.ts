@@ -3,13 +3,13 @@ import { StateTomlSchema, type StateToml } from '../../../src/schema/state-toml.
 
 describe('StateTomlSchema', () => {
   it('accepts an empty state', () => {
-    const result = StateTomlSchema.safeParse({ schema_version: 3, deployments: {} });
+    const result = StateTomlSchema.safeParse({ schema_version: 4, deployments: {} });
     expect(result.success).toBe(true);
   });
 
   it('accepts a state with one AWS deployment', () => {
     const state: StateToml = {
-      schema_version: 3,
+      schema_version: 4,
       deployments: {
         'acme-discord-bot': {
           project_path: '/Users/paul/clients/acme/discord-bot',
@@ -19,6 +19,8 @@ describe('StateTomlSchema', () => {
           last_deployed_at: '2026-04-09T14:31:42Z',
           last_config_hash: 'sha256:abc123',
           last_nix_hash: 'sha256:abc123',
+          hermes_agent_rev: 'abc1234567890',
+          hermes_agent_tag: 'v2026.4.16',
           ssh_key_path: '/Users/paul/.config/hermes-deploy/ssh_keys/acme-discord-bot',
           age_key_path: '/Users/paul/.config/hermes-deploy/age_keys/acme-discord-bot',
           health: 'healthy',
@@ -39,7 +41,7 @@ describe('StateTomlSchema', () => {
 
   it('accepts a deployment with domain_name and dns_record_id', () => {
     const state: StateToml = {
-      schema_version: 3,
+      schema_version: 4,
       deployments: {
         'acme-discord-bot': {
           project_path: '/Users/paul/clients/acme/discord-bot',
@@ -49,6 +51,8 @@ describe('StateTomlSchema', () => {
           last_deployed_at: '2026-04-09T14:31:42Z',
           last_config_hash: 'sha256:abc123',
           last_nix_hash: 'sha256:abc123',
+          hermes_agent_rev: 'abc1234567890',
+          hermes_agent_tag: 'v2026.4.16',
           ssh_key_path: '/Users/paul/.config/hermes-deploy/ssh_keys/acme-discord-bot',
           age_key_path: '/Users/paul/.config/hermes-deploy/age_keys/acme-discord-bot',
           health: 'healthy',
@@ -76,7 +80,7 @@ describe('StateTomlSchema', () => {
 
   it('accepts a deployment without domain fields (backward compat)', () => {
     const state: StateToml = {
-      schema_version: 3,
+      schema_version: 4,
       deployments: {
         'acme-discord-bot': {
           project_path: '/Users/paul/clients/acme/discord-bot',
@@ -86,6 +90,8 @@ describe('StateTomlSchema', () => {
           last_deployed_at: '2026-04-09T14:31:42Z',
           last_config_hash: 'sha256:abc123',
           last_nix_hash: 'sha256:abc123',
+          hermes_agent_rev: 'unknown',
+          hermes_agent_tag: '',
           ssh_key_path: '/Users/paul/.config/hermes-deploy/ssh_keys/acme-discord-bot',
           age_key_path: '/Users/paul/.config/hermes-deploy/age_keys/acme-discord-bot',
           health: 'healthy',
@@ -116,7 +122,7 @@ describe('StateTomlSchema', () => {
 
   it('rejects deployment without required cloud_resources fields', () => {
     const result = StateTomlSchema.safeParse({
-      schema_version: 3,
+      schema_version: 4,
       deployments: {
         bad: {
           project_path: '/x',
@@ -138,7 +144,7 @@ describe('StateTomlSchema', () => {
 
   it('rejects a deployment whose cloud field does not match cloud_resources shape', () => {
     const result = StateTomlSchema.safeParse({
-      schema_version: 3,
+      schema_version: 4,
       deployments: {
         mismatch: {
           project_path: '/x',

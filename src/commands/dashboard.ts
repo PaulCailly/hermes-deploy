@@ -1,5 +1,10 @@
 import { createDashboardServer } from '../server/index.js';
 import { openBrowser } from '../server/open-browser.js';
+import { checkCliUpdate } from '../updates/cli-update-check.js';
+import { getStatePaths } from '../state/paths.js';
+import { join } from 'node:path';
+
+declare const HERMES_DEPLOY_VERSION: string;
 
 export interface DashboardOptions {
   host?: string;
@@ -30,6 +35,19 @@ export async function dashboardCommand(opts: DashboardOptions): Promise<void> {
 
   console.log(`\nhermes-deploy dashboard running at:\n`);
   console.log(`  ${publicUrl}\n`);
+
+  try {
+    const paths = getStatePaths();
+    const cacheFile = join(paths.configDir, 'npm-update-check.json');
+    const check = await checkCliUpdate(HERMES_DEPLOY_VERSION, cacheFile);
+    if (check.updateAvailable) {
+      console.log(
+        `  Update available: hermes-deploy v${check.latest} — npm install -g @paulcailly/hermes-deploy@latest\n`,
+      );
+    }
+  } catch {
+    // Non-fatal
+  }
 
   if (opts.open !== false && process.stdout.isTTY) {
     openBrowser(publicUrl);

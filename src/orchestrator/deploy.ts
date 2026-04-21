@@ -110,6 +110,8 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
         age_key_path: ageKeyPath,
         health: 'unknown',
         instance_ip: instance.publicIp,
+        hermes_agent_rev: 'unknown',
+        hermes_agent_tag: '',
         cloud_resources: {
           instance_id: ledger.resources.instance_id!,
           security_group_id: ledger.resources.security_group_id!,
@@ -136,6 +138,8 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
         age_key_path: ageKeyPath,
         health: 'unknown',
         instance_ip: instance.publicIp,
+        hermes_agent_rev: 'unknown',
+        hermes_agent_tag: '',
         cloud_resources: {
           instance_name: ledger.resources.instance_name!,
           static_ip_name: ledger.resources.static_ip_name!,
@@ -214,7 +218,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
   const privateKeyContent = readFileSync(sshKeyPath, 'utf-8');
   const session = await opts.sessionFactory(instance.publicIp, privateKeyContent);
   try {
-    await uploadAndRebuild({
+    const rebuildResult = await uploadAndRebuild({
       session,
       sessionFactory: () => opts.sessionFactory(instance.publicIp, readFileSync(sshKeyPath, 'utf-8')),
       projectDir: opts.projectDir,
@@ -235,6 +239,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
       tomlPath,
       config,
       healthcheckTimeoutMs: opts.healthcheckTimeoutMs,
+      hermesAgentRev: rebuildResult.lockedRev,
     });
 
     if (health.health === 'unhealthy') {

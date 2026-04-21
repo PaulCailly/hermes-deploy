@@ -3,13 +3,8 @@ import { z } from 'zod';
 // ---------- Reporter events (WS wire format) ----------
 
 export const PhaseIdSchema = z.enum([
-  'validate',
-  'ensure-keys',
-  'provision',
-  'dns',
-  'wait-ssh',
-  'bootstrap',
-  'healthcheck',
+  'validate', 'ensure-keys', 'provision', 'dns',
+  'wait-ssh', 'bootstrap', 'flake-update', 'healthcheck',
 ]);
 export type PhaseIdDto = z.infer<typeof PhaseIdSchema>;
 
@@ -30,7 +25,7 @@ export const JobStatusSchema = z.enum(['running', 'done', 'failed']);
 export const JobDtoSchema = z.object({
   jobId: z.string(),
   deploymentName: z.string(),
-  kind: z.enum(['up', 'update', 'destroy', 'adopt']),
+  kind: z.enum(['up', 'update', 'destroy', 'adopt', 'upgrade']),
   status: JobStatusSchema,
   startedAt: z.string().datetime(),
   finishedAt: z.string().datetime().optional(),
@@ -109,11 +104,35 @@ export const StatusPayloadDtoSchema = z.object({
     health: z.enum(['healthy', 'unhealthy', 'unknown']),
     ssh_key_path: z.string(),
     age_key_path: z.string(),
+    hermes_agent_version: z.object({
+      lockedRev: z.string(),
+      lockedDate: z.string(),
+      lockedTag: z.string().optional(),
+    }).optional(),
   }).optional(),
   live: InstanceStatusDtoSchema.optional(),
   domain: DomainCheckDtoSchema.optional(),
 });
 export type StatusPayloadDto = z.infer<typeof StatusPayloadDtoSchema>;
+
+// ---------- Update checks (GET /api/updates) ----------
+
+export const UpdateCheckResponseDtoSchema = z.object({
+  hermesDeploy: z.object({
+    current: z.string(),
+    latest: z.string(),
+    updateAvailable: z.boolean(),
+  }),
+  hermesAgent: z.object({
+    latest: z.object({
+      tag: z.string(),
+      name: z.string(),
+      publishedAt: z.string(),
+      body: z.string(),
+    }).nullable(),
+  }),
+});
+export type UpdateCheckResponseDto = z.infer<typeof UpdateCheckResponseDtoSchema>;
 
 // ---------- Request bodies ----------
 

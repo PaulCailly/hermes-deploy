@@ -16,6 +16,29 @@ import { estimateCost } from '../model-pricing.js';
 
 const CRON_JOBS_PATH = '/var/lib/hermes/.hermes/cron/jobs.json';
 
+// ---------- Configured model fallback ----------
+// Newer hermes-agent versions may not write `model` to the sessions table.
+// Fall back to the model configured in /etc/nixos/config.yaml.
+
+const configuredModelCache = new Map<string, { model: string; expiresAt: number }>();
+const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function getConfiguredModel(agentName: string): Promise<string> {
+  const cached = configuredModelCache.get(agentName);
+  if (cached && Date.now() < cached.expiresAt) return cached.model;
+  try {
+    const yaml = await readRemoteFile(agentName, '/etc/nixos/config.yaml');
+    if (!yaml) return '';
+    // Simple YAML parse: look for "default:" under "model:" section
+    const match = yaml.match(/model:\s*\n\s+default:\s*(\S+)/);
+    const model = match?.[1] ?? '';
+    configuredModelCache.set(agentName, { model, expiresAt: Date.now() + MODEL_CACHE_TTL_MS });
+    return model;
+  } catch {
+    return '';
+  }
+}
+
 // ---------- Row shapes (match Hermes state.db schema) ----------
 
 interface SessionRow {
@@ -72,12 +95,12 @@ interface SessionDto {
   estimatedCostUSD: number;
 }
 
-function rowToSession(r: SessionRow): SessionDto {
+function rowToSession(r: SessionRow, fallbackModel = ''): SessionDto {
   return {
     id: r.id,
     title: r.title ?? '(untitled)',
     source: r.source ?? 'unknown',
-    model: r.model ?? '',
+    model: r.model || fallbackModel,
     parentSessionId: r.parent_session_id ?? undefined,
     startedAt: r.started_at,
     endedAt: r.ended_at ?? undefined,
@@ -118,25 +141,28 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
 
     // Fetch per-session data so we can apply fallback pricing when
     // hermes-agent didn't record cost (e.g. Gemini models).
-    const sessions = await runSqliteJson<{
-      model: string | null;
-      started_at: string;
-      message_count: number | null;
-      tool_call_count: number | null;
-      input_tokens: number | null;
-      output_tokens: number | null;
-      cache_read_tokens: number | null;
-      cache_write_tokens: number | null;
-      reasoning_tokens: number | null;
-      actual_cost_usd: number | null;
-      estimated_cost_usd: number | null;
-    }>(name, `
-      SELECT model, started_at, message_count, tool_call_count,
-             input_tokens, output_tokens, cache_read_tokens,
-             cache_write_tokens, reasoning_tokens,
-             actual_cost_usd, estimated_cost_usd
-      FROM sessions
-    `.trim());
+    const [sessions, cfgModel] = await Promise.all([
+      runSqliteJson<{
+        model: string | null;
+        started_at: string;
+        message_count: number | null;
+        tool_call_count: number | null;
+        input_tokens: number | null;
+        output_tokens: number | null;
+        cache_read_tokens: number | null;
+        cache_write_tokens: number | null;
+        reasoning_tokens: number | null;
+        actual_cost_usd: number | null;
+        estimated_cost_usd: number | null;
+      }>(name, `
+        SELECT model, started_at, message_count, tool_call_count,
+               input_tokens, output_tokens, cache_read_tokens,
+               cache_write_tokens, reasoning_tokens,
+               actual_cost_usd, estimated_cost_usd
+        FROM sessions
+      `.trim()),
+      getConfiguredModel(name),
+    ]);
 
     let totalSessions = 0, totalMessages = 0, totalToolCalls = 0;
     let totalInputTokens = 0, totalOutputTokens = 0;
@@ -157,7 +183,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       totalReasoningTokens += s.reasoning_tokens ?? 0;
 
       const cost = s.actual_cost_usd || s.estimated_cost_usd
-        || estimateCost(s.model, s.input_tokens ?? 0, s.output_tokens ?? 0);
+        || estimateCost(s.model || cfgModel, s.input_tokens ?? 0, s.output_tokens ?? 0);
       totalCostUSD += cost;
 
       const sessionDate = new Date(
@@ -211,15 +237,18 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     }
     const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
 
-    const rows = await runSqliteJson<SessionRow>(name, `
-      SELECT ${SESSION_COLUMNS}
-      FROM sessions
-      ${whereClause}
-      ORDER BY started_at DESC
-      LIMIT ${limit}
-    `.trim());
+    const [rows, fallbackModel] = await Promise.all([
+      runSqliteJson<SessionRow>(name, `
+        SELECT ${SESSION_COLUMNS}
+        FROM sessions
+        ${whereClause}
+        ORDER BY started_at DESC
+        LIMIT ${limit}
+      `.trim()),
+      getConfiguredModel(name),
+    ]);
 
-    return rows.map(rowToSession);
+    return rows.map(r => rowToSession(r, fallbackModel));
   });
 
   // ---------- GET /api/agents/:name/sessions/:sid/messages ----------
@@ -521,8 +550,8 @@ json.dump(wh, sys.stdout)
         const isRunning = !row.ended_at;
         const status = isRunning ? 'running' : row.end_reason === 'error' ? 'error' : 'completed';
         recentDeliveries.push({
-          id: parts.length > 2 ? parts[2] : row.id,
-          route: parts.length > 1 ? parts[1] : 'webhook',
+          id: parts.length > 2 ? (parts[2] ?? row.id) : row.id,
+          route: parts.length > 1 ? (parts[1] ?? 'webhook') : 'webhook',
           event: row.title ?? 'webhook',
           action: '',
           status,

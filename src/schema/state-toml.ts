@@ -37,6 +37,8 @@ const BaseDeploymentSchema = z.object({
   age_key_path: z.string().min(1),
   health: HealthSchema,
   instance_ip: z.string().min(1),
+  hermes_agent_rev: z.string().min(1).default('unknown'),
+  hermes_agent_tag: z.string().default(''),
   domain_name: z.string().min(1).optional(),
   dns_record_id: z.string().min(1).optional(),
 });
@@ -53,7 +55,7 @@ const DeploymentSchema = z.discriminatedUnion('cloud', [
 ]);
 
 export const StateTomlSchema = z.object({
-  schema_version: z.literal(3),
+  schema_version: z.literal(4),
   deployments: z.record(z.string(), DeploymentSchema),
 });
 

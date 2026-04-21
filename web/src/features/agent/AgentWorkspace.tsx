@@ -11,6 +11,7 @@ import { GatewayTab } from './GatewayTab';
 import { WebhooksTab } from './WebhooksTab';
 import { PluginsTab } from './PluginsTab';
 import { InfraTab } from './InfraTab';
+import { AgentUpdateBanner } from './AgentUpdateBanner';
 import { ConfigTab } from '../config/ConfigTab';
 import { LogsTab } from '../logs/LogsTab';
 import { SshTab } from '../ssh/SshTab';
@@ -58,6 +59,13 @@ export function AgentWorkspace({ name, tab, navigate }: AgentWorkspaceProps) {
     <div className="flex flex-col h-screen">
       <AgentHeader name={name} status={status} />
       <AgentTabBar active={tab} onSelect={onTabSelect} />
+      <AgentUpdateBanner
+        name={name}
+        lockedRev={(status?.stored as any)?.hermes_agent_version?.lockedRev}
+        lockedDate={(status?.stored as any)?.hermes_agent_version?.lockedDate}
+        lockedTag={(status?.stored as any)?.hermes_agent_version?.lockedTag}
+        navigate={navigate}
+      />
       <div className="flex-1 overflow-auto bg-[#0f1117]">
         {renderTab()}
       </div>
