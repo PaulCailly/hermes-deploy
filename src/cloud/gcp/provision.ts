@@ -30,119 +30,136 @@ export async function provisionGcp(
   r.project_id = project;
   r.zone = zone;
 
+  // Helper: returns true if the error is a GCP 409 (already exists).
+  const isAlreadyExists = (e: unknown): boolean => {
+    const msg = (e as Error)?.message ?? '';
+    return msg.includes('alreadyExists') || msg.includes('already exists');
+  };
+
   try {
-    // 1. Reserve static external IP
+    // 1. Reserve static external IP (idempotent — reuse if 409)
     const addressesClient = new AddressesClient();
-    const [addressOp] = await addressesClient.insert({
-      project,
-      region,
-      addressResource: {
-        name,
-        addressType: 'EXTERNAL',
-        networkTier: 'PREMIUM',
-      },
-    });
-    await waitRegionOp(project, region, addressOp);
+    try {
+      const [addressOp] = await addressesClient.insert({
+        project,
+        region,
+        addressResource: {
+          name,
+          addressType: 'EXTERNAL',
+          networkTier: 'PREMIUM',
+        },
+      });
+      await waitRegionOp(project, region, addressOp);
+    } catch (e) {
+      if (!isAlreadyExists(e)) throw e;
+    }
     r.static_ip_name = name;
 
     // Retrieve the allocated IP address
     const [addressInfo] = await addressesClient.get({ project, region, address: name });
     const publicIp = addressInfo.address!;
 
-    // 2. Create firewall rules
+    // 2. Create firewall rules (idempotent — skip if 409)
     const firewallsClient = new FirewallsClient();
     const ruleNames: string[] = [];
 
     // Rule A: SSH from user IP
     const sshRuleName = `${name}-ssh`;
-    const [sshOp] = await firewallsClient.insert({
-      project,
-      firewallResource: {
-        name: sshRuleName,
-        network: `projects/${project}/global/networks/default`,
-        direction: 'INGRESS',
-        allowed: [{ IPProtocol: 'tcp', ports: ['22'] }],
-        sourceRanges: [spec.networkRules.sshAllowedFrom],
-        targetTags: [name],
-      },
-    });
-    await waitGlobalOp(project, sshOp);
+    try {
+      const [sshOp] = await firewallsClient.insert({
+        project,
+        firewallResource: {
+          name: sshRuleName,
+          network: `projects/${project}/global/networks/default`,
+          direction: 'INGRESS',
+          allowed: [{ IPProtocol: 'tcp', ports: ['22'] }],
+          sourceRanges: [spec.networkRules.sshAllowedFrom],
+          targetTags: [name],
+        },
+      });
+      await waitGlobalOp(project, sshOp);
+    } catch (e) {
+      if (!isAlreadyExists(e)) throw e;
+    }
     ruleNames.push(sshRuleName);
 
     // Rule B: inbound ports (only if non-empty)
     if (spec.networkRules.inboundPorts.length > 0) {
       const portsRuleName = `${name}-ports`;
-      const [portsOp] = await firewallsClient.insert({
-        project,
-        firewallResource: {
-          name: portsRuleName,
-          network: `projects/${project}/global/networks/default`,
-          direction: 'INGRESS',
-          allowed: [{ IPProtocol: 'tcp', ports: spec.networkRules.inboundPorts.map(String) }],
-          sourceRanges: ['0.0.0.0/0'],
-          targetTags: [name],
-        },
-      });
-      await waitGlobalOp(project, portsOp);
+      try {
+        const [portsOp] = await firewallsClient.insert({
+          project,
+          firewallResource: {
+            name: portsRuleName,
+            network: `projects/${project}/global/networks/default`,
+            direction: 'INGRESS',
+            allowed: [{ IPProtocol: 'tcp', ports: spec.networkRules.inboundPorts.map(String) }],
+            sourceRanges: ['0.0.0.0/0'],
+            targetTags: [name],
+          },
+        });
+        await waitGlobalOp(project, portsOp);
+      } catch (e) {
+        if (!isAlreadyExists(e)) throw e;
+      }
       ruleNames.push(portsRuleName);
     }
     r.firewall_rule_names = ruleNames;
 
-    // 3. Create instance
+    // 3. Create instance (idempotent — reuse if 409)
     const instancesClient = new InstancesClient();
-    const [instanceOp] = await instancesClient.insert({
-      project,
-      zone,
-      instanceResource: {
-        name,
-        machineType: `zones/${zone}/machineTypes/${SIZE_MAP_GCP[spec.size]}`,
-        disks: [{
-          initializeParams: {
-            sourceImage: spec.image.id,
-            diskSizeGb: String(spec.diskGb),
-            diskType: `zones/${zone}/diskTypes/pd-ssd`,
-          },
-          boot: true,
-          autoDelete: true,
-        }],
-        networkInterfaces: [{
-          network: `projects/${project}/global/networks/default`,
-          accessConfigs: [{
-            name: 'External NAT',
-            natIP: publicIp,
-            type: 'ONE_TO_ONE_NAT',
-          }],
-        }],
-        metadata: {
-          items: [
-            { key: 'ssh-keys', value: `root:${spec.publicSshKey}` },
-            // Debian GCE images block root SSH by default
-            // (PermitRootLogin no). This startup script enables key-based
-            // root login so hermes-deploy can SSH as root — consistent
-            // with the AWS path (NixOS AMIs always allow root SSH).
-            // The script runs before the instance becomes SSH-reachable.
-            {
-              key: 'startup-script',
-              value: [
-                '#!/bin/bash',
-                'mkdir -p /root/.ssh',
-                `echo '${spec.publicSshKey}' >> /root/.ssh/authorized_keys`,
-                'chmod 700 /root/.ssh',
-                'chmod 600 /root/.ssh/authorized_keys',
-                "sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config",
-                'systemctl restart sshd',
-              ].join('\n'),
+    try {
+      const [instanceOp] = await instancesClient.insert({
+        project,
+        zone,
+        instanceResource: {
+          name,
+          machineType: `zones/${zone}/machineTypes/${SIZE_MAP_GCP[spec.size]}`,
+          disks: [{
+            initializeParams: {
+              sourceImage: spec.image.id,
+              diskSizeGb: String(spec.diskGb),
+              diskType: `zones/${zone}/diskTypes/pd-ssd`,
             },
-          ],
+            boot: true,
+            autoDelete: true,
+          }],
+          networkInterfaces: [{
+            network: `projects/${project}/global/networks/default`,
+            accessConfigs: [{
+              name: 'External NAT',
+              natIP: publicIp,
+              type: 'ONE_TO_ONE_NAT',
+            }],
+          }],
+          metadata: {
+            items: [
+              { key: 'ssh-keys', value: `root:${spec.publicSshKey}` },
+              {
+                key: 'startup-script',
+                value: [
+                  '#!/bin/bash',
+                  'mkdir -p /root/.ssh',
+                  `echo '${spec.publicSshKey}' >> /root/.ssh/authorized_keys`,
+                  'chmod 700 /root/.ssh',
+                  'chmod 600 /root/.ssh/authorized_keys',
+                  "sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config",
+                  'systemctl restart sshd',
+                ].join('\n'),
+              },
+            ],
+          },
+          tags: { items: [name] },
+          labels: {
+            [LABEL_MANAGED_BY]: LABEL_VALUE,
+            [LABEL_DEPLOYMENT]: spec.deploymentName,
+          },
         },
-        tags: { items: [name] },
-        labels: {
-          [LABEL_MANAGED_BY]: LABEL_VALUE,
-          [LABEL_DEPLOYMENT]: spec.deploymentName,
-        },
-      },
-    });
-    await waitZoneOp(project, zone, instanceOp);
+      });
+      await waitZoneOp(project, zone, instanceOp);
+    } catch (e) {
+      if (!isAlreadyExists(e)) throw e;
+    }
     r.instance_name = name;
 
     // 4. Poll until RUNNING

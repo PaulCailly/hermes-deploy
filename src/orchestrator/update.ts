@@ -201,9 +201,12 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
     reporter.phaseDone('bootstrap');
 
     // === Phase 5 — healthcheck and state update ===
+    // Create a fresh session — the original may be dead if sshd restarted
+    // during the rebuild (GCE consistently drops the connection).
     reporter.phaseStart('healthcheck', 'Waiting for hermes-agent.service');
+    const freshSession = await opts.sessionFactory(deployment.instance_ip, readFileSync(deployment.ssh_key_path, 'utf-8'));
     const health = await recordConfigAndHealthcheck({
-      session,
+      session: freshSession,
       store,
       deploymentName: opts.deploymentName,
       projectDir: deployment.project_path,
@@ -222,6 +225,6 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
     reporter.success(`${opts.deploymentName} updated`);
     return { health: 'healthy', publicIp: deployment.instance_ip, skipped: false };
   } finally {
-    await session.dispose();
+    try { await session.dispose(); } catch {}
   }
 }

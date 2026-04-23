@@ -60,13 +60,16 @@ export async function collectDeploymentSummaries(
     if (opts.live) {
       const factory =
         opts.providerFactory ??
-        ((deployment) =>
+        ((deployment, resources) =>
           createCloudProvider({
             provider: deployment.cloud,
             region: deployment.region,
             imageCacheFile: paths.imageCacheFile,
+            ...(deployment.cloud === 'gcp'
+              ? { zone: (resources as any)?.zone, profile: (resources as any)?.project_id }
+              : {}),
           }));
-      const provider = factory({ cloud: d.cloud, region: d.region });
+      const provider = factory({ cloud: d.cloud, region: d.region }, d.cloud_resources);
       const ledger: ResourceLedger =
         d.cloud === 'aws'
           ? { kind: 'aws', resources: { ...d.cloud_resources } }
