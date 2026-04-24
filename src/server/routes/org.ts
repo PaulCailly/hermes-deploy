@@ -285,8 +285,10 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       if (r.status !== 'fulfilled') continue;
       for (const j of r.value.jobs) {
         if (!j.enabled) continue;
+        const jobId = j.id ?? j.name ?? j.schedule?.expression;
+        if (!jobId) continue;
         flat.push({
-          id: `${r.value.name}/${r.value.profile}/${j.id ?? ''}`,
+          id: `${r.value.name}/${r.value.profile}/${jobId}`,
           agent: r.value.name,
           profile: r.value.profile,
           name: j.name ?? '(unnamed)',

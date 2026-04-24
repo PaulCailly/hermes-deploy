@@ -271,40 +271,37 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
     reporter.phaseDone('healthcheck');
 
     // === Phase 5.5 — upload changed profile files ===
-    if (config.hermes.profiles.length > 0) {
-      const storedHashes = deployment.profile_hashes ?? {};
-      // Compute all hashes once upfront
-      const profileHashMap = new Map(
-        config.hermes.profiles.map(p => [p.name, computeProfileHash(deployment.project_path, p)]),
-      );
-      const changedProfiles = config.hermes.profiles.filter(p => profileHashMap.get(p.name) !== storedHashes[p.name]);
+    const storedHashes = deployment.profile_hashes ?? {};
+    const profileHashMap = new Map(
+      config.hermes.profiles.map(p => [p.name, computeProfileHash(deployment.project_path, p)]),
+    );
+    const changedProfiles = config.hermes.profiles.filter(p => profileHashMap.get(p.name) !== storedHashes[p.name]);
 
-      if (changedProfiles.length > 0) {
-        reporter.log(`Uploading ${changedProfiles.length} changed profile(s)...`);
-        for (const profile of changedProfiles) {
-          reporter.log(`  Profile: ${profile.name}`);
-          await uploadProfileFiles({
-            session: freshSession,
-            projectDir: deployment.project_path,
-            profile,
-            reporter,
-          });
-          // Restart gateway for this profile if config changed
-          const restartResult = await freshSession.exec(
-            `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1`,
-          );
-          if (restartResult.exitCode !== 0) {
-            reporter.log(`  Warning: gateway restart failed for profile "${profile.name}" (exit ${restartResult.exitCode}): ${restartResult.stdout.trim()}`);
-          }
+    if (changedProfiles.length > 0) {
+      reporter.log(`Uploading ${changedProfiles.length} changed profile(s)...`);
+      for (const profile of changedProfiles) {
+        reporter.log(`  Profile: ${profile.name}`);
+        await uploadProfileFiles({
+          session: freshSession,
+          projectDir: deployment.project_path,
+          profile,
+          reporter,
+        });
+        // Restart gateway for this profile if config changed
+        const restartResult = await freshSession.exec(
+          `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1`,
+        );
+        if (restartResult.exitCode !== 0) {
+          reporter.log(`  Warning: gateway restart failed for profile "${profile.name}" (exit ${restartResult.exitCode}): ${restartResult.stdout.trim()}`);
         }
       }
-      // Replace profile_hashes entirely (prunes removed profiles)
-      const hashes: Record<string, string> = {};
-      for (const [name, hash] of profileHashMap) hashes[name] = hash;
-      await store.update(state => {
-        state.deployments[opts.deploymentName]!.profile_hashes = hashes;
-      });
     }
+    // Replace profile_hashes entirely (prunes removed profiles)
+    const hashes: Record<string, string> = {};
+    for (const [name, hash] of profileHashMap) hashes[name] = hash;
+    await store.update(state => {
+      state.deployments[opts.deploymentName]!.profile_hashes = hashes;
+    });
 
     reporter.success(`${opts.deploymentName} updated`);
     return { health: 'healthy', publicIp: deployment.instance_ip, skipped: false };
