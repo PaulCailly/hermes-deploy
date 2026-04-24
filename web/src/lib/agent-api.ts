@@ -10,10 +10,9 @@ import type {
 const REFETCH_MS = 15_000;
 
 /** Build query string suffix for profile-scoped API calls. */
-function profileQs(profile?: string, existingParams?: string): string {
-  if (!profile || profile === 'default') return existingParams ? `?${existingParams}` : '';
-  const sep = existingParams ? `${existingParams}&` : '';
-  return `?${sep}profile=${encodeURIComponent(profile)}`;
+function profileQs(profile?: string): string {
+  if (!profile || profile === 'default') return '';
+  return `?profile=${encodeURIComponent(profile)}`;
 }
 
 // ---------- Profile hook ----------

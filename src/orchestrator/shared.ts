@@ -255,16 +255,19 @@ export async function uploadProfileFiles(args: {
   const configContent = readFileSync(pathResolve(projectDir, profile.config_file));
   await session.uploadFile(`${profileHome}/config.yaml`, configContent);
 
-  // Upload encrypted secrets file, then decrypt on-box using sops + age key
+  // Upload encrypted secrets file, then decrypt on-box using sops + age key.
+  // Decrypt to a temp file first so a failed decryption doesn't corrupt .env.
   const secretsPath = pathResolve(projectDir, profile.secrets_file);
   const secretsContent = readFileSync(secretsPath);
   await session.uploadFile(`${profileHome}/secrets.env.enc`, secretsContent);
   const decryptResult = await session.exec(
-    `SOPS_AGE_KEY_FILE=/var/lib/sops-nix/age.key sops -d ${profileHome}/secrets.env.enc > ${profileHome}/.env 2>&1`,
+    `SOPS_AGE_KEY_FILE=/var/lib/sops-nix/age.key sops -d ${profileHome}/secrets.env.enc > ${profileHome}/.env.tmp 2>&1`,
   );
   if (decryptResult.exitCode !== 0) {
-    reporter.log(`  Warning: could not decrypt secrets for profile "${profile.name}": ${decryptResult.stdout}`);
+    await session.exec(`rm -f ${profileHome}/.env.tmp`);
+    throw new Error(`Failed to decrypt secrets for profile "${profile.name}": ${decryptResult.stdout}`);
   }
+  await session.exec(`mv ${profileHome}/.env.tmp ${profileHome}/.env`);
 
   // Upload documents
   for (const [docName, relPath] of Object.entries(profile.documents)) {

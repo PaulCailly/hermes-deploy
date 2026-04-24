@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { StateStore } from '../../state/store.js';
 import { getStatePaths } from '../../state/paths.js';
-import { runSqliteJson, readRemoteJson, listRemoteDir, HERMES_HOME } from '../agent-data-source.js';
+import { runSqliteJson, readRemoteJson, listRemoteDir, readRemoteFile, HERMES_HOME, resolveHermesHome } from '../agent-data-source.js';
 import { estimateCost } from '../model-pricing.js';
 
 // ---------- Per-agent row shapes ----------
@@ -114,7 +114,7 @@ async function discoverProfiles(names: string[]): Promise<Map<string, string[]>>
   const results = await Promise.allSettled(
     names.map(async (name) => {
       const dirs = await listRemoteDir(name, `${HERMES_HOME}/profiles`);
-      return { name, profiles: ['default', ...dirs.filter((d) => /^[a-z0-9][a-z0-9-]*$/.test(d))] };
+      return { name, profiles: ['default', ...dirs.filter((d) => /^[a-z0-9][a-z0-9-]{0,62}$/.test(d))] };
     }),
   );
   const map = new Map<string, string[]>();
@@ -124,9 +124,7 @@ async function discoverProfiles(names: string[]): Promise<Map<string, string[]>>
   return map;
 }
 
-function resolveHome(profile: string): string {
-  return profile === 'default' ? HERMES_HOME : `${HERMES_HOME}/profiles/${profile}`;
-}
+// Use resolveHermesHome from agent-data-source (imported above)
 
 export async function orgRoutes(app: FastifyInstance): Promise<void> {
   // ---------- GET /api/org/stats ----------
@@ -139,7 +137,7 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       names.flatMap((name) => {
         const profiles = profileMap.get(name) ?? ['default'];
         return profiles.map(async (profile) => {
-          const home = resolveHome(profile);
+          const home = resolveHermesHome(profile);
           const rows = await runSqliteJson<AgentSessionRow>(name, SESSIONS_SQL, home);
           return { name, profile, stats: computeAgentStats(rows) };
         });
@@ -215,7 +213,7 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       names.flatMap((name) => {
         const profiles = profileMap.get(name) ?? ['default'];
         return profiles.map(async (profile) => {
-          const home = resolveHome(profile);
+          const home = resolveHermesHome(profile);
           const rows = await runSqliteJson<RecentSessionRow>(name, RECENT_SESSIONS_SQL, home);
           return { name, profile, rows };
         });
@@ -266,7 +264,7 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       names.flatMap((name) => {
         const profiles = profileMap.get(name) ?? ['default'];
         return profiles.map(async (profile) => {
-          const home = resolveHome(profile);
+          const home = resolveHermesHome(profile);
           const data = await readRemoteJson<unknown>(name, `${home}/cron/jobs.json`);
           if (!Array.isArray(data)) return { name, profile, jobs: [] as CronJobJson[] };
           return { name, profile, jobs: data as CronJobJson[] };
@@ -309,7 +307,6 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
   // ---------- GET /api/org/skills ----------
   // Aggregate skills across all agents, deduplicated by category/name
   app.get('/api/org/skills', async () => {
-    const { readRemoteFile } = await import('../agent-data-source.js');
     const names = await listAgents();
     const profileMap = await discoverProfiles(names);
 
@@ -317,7 +314,7 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       names.flatMap((name) => {
         const profiles = profileMap.get(name) ?? ['default'];
         return profiles.map(async (profile) => {
-          const home = resolveHome(profile);
+          const home = resolveHermesHome(profile);
           const cats = await listRemoteDir(name, `${home}/skills`);
           const cats2: Array<{ name: string; skills: Array<{ id: string; name: string; category: string; files: string[]; requiredConfig: string[]; agents: string[] }> }> = [];
           for (const cat of cats) {

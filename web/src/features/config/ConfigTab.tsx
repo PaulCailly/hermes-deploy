@@ -46,6 +46,20 @@ export function ConfigTab({ name, profile }: Props) {
     enabled: !!activeFile,
   });
 
+  // Reset active file when profile changes to avoid requesting a stale file key
+  useEffect(() => {
+    if (filesQuery.data?.files) {
+      const exists = filesQuery.data.files.some(f => f.key === activeFile);
+      if (!exists) {
+        const firstFile = filesQuery.data.files[0]?.key ?? '';
+        setActiveFile(firstFile);
+        setEditorContent('');
+        setDirty(false);
+        lastLoadedFile.current = null;
+      }
+    }
+  }, [filesQuery.data, profile]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sync editor content only when switching files, not on background refetches
   useEffect(() => {
     if (contentQuery.data && lastLoadedFile.current !== activeFile) {

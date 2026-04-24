@@ -155,7 +155,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
 
     const dirs = await listRemoteDir(name, `${HERMES_HOME}/profiles`);
     for (const dir of dirs) {
-      if (/^[a-z0-9][a-z0-9-]*$/.test(dir)) {
+      if (/^[a-z0-9][a-z0-9-]{0,62}$/.test(dir)) {
         profiles.push({ name: dir, path: `${HERMES_HOME}/profiles/${dir}` });
       }
     }
@@ -469,7 +469,11 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: 'invalid action' });
       }
       try {
-        const profileFlag = req.query.profile && req.query.profile !== 'default' ? `-p ${req.query.profile} ` : '';
+        // Validate profile name before interpolating into shell command
+        const home = profileHome(req.query);
+        const profileFlag = home !== HERMES_HOME && req.query.profile
+          ? `-p '${req.query.profile.replace(/'/g, "'\\''")}' `
+          : '';
         const res = await runRemoteCommand(name, `hermes ${profileFlag}gateway ${action} 2>&1`);
         return reply.code(res.exitCode === 0 ? 200 : 500).send({
           ok: res.exitCode === 0,
@@ -684,9 +688,10 @@ PYEOF`,
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
     const home = profileHome(req.query);
 
+    // Derive plugins dir from home — avoids using unvalidated query param
     const pluginsDir = home === HERMES_HOME
       ? '~/.hermes/plugins'
-      : `~/.hermes/profiles/${req.query.profile}/plugins`;
+      : `${home}/plugins`;
 
     try {
       const res = await runRemoteCommand(

@@ -26,7 +26,7 @@ export const HERMES_HOME = '/var/lib/hermes/.hermes';
  */
 export function resolveHermesHome(profile?: string): string {
   if (!profile || profile === 'default') return HERMES_HOME;
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(profile)) {
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(profile)) {
     throw new Error(`invalid profile name: ${profile}`);
   }
   return `${HERMES_HOME}/profiles/${profile}`;

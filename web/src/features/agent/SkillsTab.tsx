@@ -33,6 +33,15 @@ export function SkillsTab({ name, profile }: SkillsTabProps) {
     }
   }, [categories, selectedSkill]);
 
+  // Reset all selection state when profile changes
+  useEffect(() => {
+    setSelectedSkill(null);
+    setSelectedFile(null);
+    setEditing(false);
+    setEditBuffer('');
+    setSaveError(null);
+  }, [profile]);
+
   // Reset edit mode when changing file/skill
   useEffect(() => {
     setEditing(false);

@@ -252,27 +252,20 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
     // === Phase 5.5 — upload profile files ===
     if (config.hermes.profiles.length > 0) {
       reporter.log(`Uploading ${config.hermes.profiles.length} profile(s)...`);
-      const profileSession = await opts.sessionFactory(instance.publicIp, readFileSync(sshKeyPath, 'utf-8'));
-      try {
-        for (const profile of config.hermes.profiles) {
-          reporter.log(`  Profile: ${profile.name}`);
-          await uploadProfileFiles({
-            session: profileSession,
-            projectDir: opts.projectDir,
-            profile,
-            reporter,
-          });
-        }
-        // Store profile hashes
+      for (const profile of config.hermes.profiles) {
+        reporter.log(`  Profile: ${profile.name}`);
+        await uploadProfileFiles({
+          session,
+          projectDir: opts.projectDir,
+          profile,
+          reporter,
+        });
+        // Record hash immediately after each successful upload
         await store.update(state => {
           const d = state.deployments[config.name]!;
-          d.profile_hashes = {};
-          for (const profile of config.hermes.profiles) {
-            d.profile_hashes[profile.name] = computeProfileHash(opts.projectDir, profile);
-          }
+          if (!d.profile_hashes) d.profile_hashes = {};
+          d.profile_hashes[profile.name] = computeProfileHash(opts.projectDir, profile);
         });
-      } finally {
-        await profileSession.dispose();
       }
     }
 

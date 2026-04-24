@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { resolveProjectPath } from '../project-resolver.js';
 import { loadHermesToml } from '../../schema/load.js';
@@ -31,7 +31,7 @@ function buildFileMap(projectPath: string, profile?: string): Record<string, { n
       const config = loadHermesToml(join(projectPath, 'hermes.toml'));
       const profileCfg = config.hermes.profiles.find(p => p.name === profile);
       if (profileCfg) {
-        map['config-yaml'] = { name: profileCfg.config_file, ext: 'yaml', resolvedPath: join(projectPath, profileCfg.config_file) };
+        map['config-yaml'] = { name: basename(profileCfg.config_file), ext: 'yaml', resolvedPath: join(projectPath, profileCfg.config_file) };
         for (const [docName, docPath] of Object.entries(profileCfg.documents)) {
           const ext = docName.endsWith('.md') ? 'markdown' : docName.endsWith('.yaml') || docName.endsWith('.yml') ? 'yaml' : 'plaintext';
           const key = `doc-${docName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`;
@@ -39,7 +39,7 @@ function buildFileMap(projectPath: string, profile?: string): Record<string, { n
         }
       }
     } catch {
-      map['config-yaml'] = { name: 'config.yaml', ext: 'yaml', resolvedPath: join(projectPath, 'config.yaml') };
+      // hermes.toml failed to load — only show hermes.toml so the user can fix it
     }
   }
 

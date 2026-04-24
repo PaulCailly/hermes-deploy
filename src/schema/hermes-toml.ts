@@ -85,7 +85,7 @@ const HermesSchema = z
       const names = h.profiles.map(p => p.name);
       return new Set(names).size === names.length;
     },
-    { message: 'Duplicate profile names are not allowed' },
+    { message: 'Duplicate profile names are not allowed', path: ['profiles'] },
   );
 
 const DomainSchema = z.object({

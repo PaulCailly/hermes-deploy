@@ -64,6 +64,13 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   const documentPaths = Object.values(config.hermes.documents).map(p =>
     pathResolve(deployment.project_path, p),
   );
+  // Include profile files in the top-level hash so profile-only edits
+  // are not falsely treated as no-op.
+  const profileFilePaths = config.hermes.profiles.flatMap(p => [
+    pathResolve(deployment.project_path, p.config_file),
+    pathResolve(deployment.project_path, p.secrets_file),
+    ...Object.values(p.documents).map(d => pathResolve(deployment.project_path, d)),
+  ]);
   const newHash = computeConfigHash(
     [
       tomlPath,
@@ -73,6 +80,7 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
         ? pathResolve(deployment.project_path, config.hermes.nix_extra)
         : '',
       ...documentPaths,
+      ...profileFilePaths,
     ].filter(Boolean),
     true,
   );
@@ -170,6 +178,42 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
     domainExtra,
   );
   if (nixHash === deployment.last_nix_hash) {
+    // Nix config unchanged — skip nixos-rebuild. But still sync profiles
+    // if any profile files changed (profiles don't affect NixOS config).
+    if (config.hermes.profiles.length > 0) {
+      const storedHashes = deployment.profile_hashes ?? {};
+      const profileHashMap = new Map(
+        config.hermes.profiles.map(p => [p.name, computeProfileHash(deployment.project_path, p)]),
+      );
+      const changedProfiles = config.hermes.profiles.filter(p => profileHashMap.get(p.name) !== storedHashes[p.name]);
+
+      if (changedProfiles.length > 0) {
+        reporter.log(`Uploading ${changedProfiles.length} changed profile(s)...`);
+        const profileSession = await opts.sessionFactory(deployment.instance_ip, readFileSync(deployment.ssh_key_path, 'utf-8'));
+        try {
+          for (const profile of changedProfiles) {
+            reporter.log(`  Profile: ${profile.name}`);
+            await uploadProfileFiles({
+              session: profileSession,
+              projectDir: deployment.project_path,
+              profile,
+              reporter,
+            });
+            await profileSession.exec(
+              `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1 || true`,
+            );
+          }
+          await store.update(state => {
+            const d = state.deployments[opts.deploymentName]!;
+            const hashes: Record<string, string> = {};
+            for (const [name, hash] of profileHashMap) hashes[name] = hash;
+            d.profile_hashes = hashes;
+          });
+        } finally {
+          await profileSession.dispose();
+        }
+      }
+    }
     reporter.success(`network rules updated — ${opts.deploymentName} config unchanged`);
     return {
       health: deployment.health === 'healthy' ? 'healthy' : 'unhealthy',
@@ -226,40 +270,34 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
     // === Phase 5.5 — upload changed profile files ===
     if (config.hermes.profiles.length > 0) {
       const storedHashes = deployment.profile_hashes ?? {};
-      const changedProfiles = config.hermes.profiles.filter(p => {
-        const newHash = computeProfileHash(deployment.project_path, p);
-        return newHash !== storedHashes[p.name];
-      });
+      // Compute all hashes once upfront
+      const profileHashMap = new Map(
+        config.hermes.profiles.map(p => [p.name, computeProfileHash(deployment.project_path, p)]),
+      );
+      const changedProfiles = config.hermes.profiles.filter(p => profileHashMap.get(p.name) !== storedHashes[p.name]);
 
       if (changedProfiles.length > 0) {
         reporter.log(`Uploading ${changedProfiles.length} changed profile(s)...`);
-        const profileSession = await opts.sessionFactory(deployment.instance_ip, readFileSync(deployment.ssh_key_path, 'utf-8'));
-        try {
-          for (const profile of changedProfiles) {
-            reporter.log(`  Profile: ${profile.name}`);
-            await uploadProfileFiles({
-              session: profileSession,
-              projectDir: deployment.project_path,
-              profile,
-              reporter,
-            });
-            // Restart gateway for this profile if config changed
-            await profileSession.exec(
-              `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1 || true`,
-            );
-          }
-          // Update stored hashes for all profiles (not just changed ones)
-          await store.update(state => {
-            const d = state.deployments[opts.deploymentName]!;
-            if (!d.profile_hashes) d.profile_hashes = {};
-            for (const profile of config.hermes.profiles) {
-              d.profile_hashes[profile.name] = computeProfileHash(deployment.project_path, profile);
-            }
+        for (const profile of changedProfiles) {
+          reporter.log(`  Profile: ${profile.name}`);
+          await uploadProfileFiles({
+            session: freshSession,
+            projectDir: deployment.project_path,
+            profile,
+            reporter,
           });
-        } finally {
-          await profileSession.dispose();
+          // Restart gateway for this profile if config changed
+          await freshSession.exec(
+            `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1 || true`,
+          );
         }
       }
+      // Replace profile_hashes entirely (prunes removed profiles)
+      const hashes: Record<string, string> = {};
+      for (const [name, hash] of profileHashMap) hashes[name] = hash;
+      await store.update(state => {
+        state.deployments[opts.deploymentName]!.profile_hashes = hashes;
+      });
     }
 
     reporter.success(`${opts.deploymentName} updated`);
