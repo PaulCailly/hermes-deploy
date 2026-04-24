@@ -40,16 +40,32 @@ export function OrgDashboard({ agents, navigate }: OrgDashboardProps) {
   const healthyCount = agents.filter((a) => a.storedHealth === 'healthy').length;
   const offlineCount = agents.length - healthyCount;
 
-  // Build per-agent display from stored agents + stats aggregate
-  const agentStatsMap = new Map(org?.perAgent.map((a) => [a.name, a]) ?? []);
-  const maxCost = Math.max(...(org?.perAgent.map((a) => a.totalCostUSD) ?? [0.01]), 0.01);
+  // Group per-agent stats by agent name (may have multiple profile entries)
+  const agentProfileStats = new Map<string, Array<{ profile: string; totalSessions: number; totalCostUSD: number }>>();
+  for (const s of org?.perAgent ?? []) {
+    if (!agentProfileStats.has(s.name)) agentProfileStats.set(s.name, []);
+    agentProfileStats.get(s.name)!.push({
+      profile: s.profile,
+      totalSessions: s.totalSessions,
+      totalCostUSD: s.totalCostUSD,
+    });
+  }
+
+  const maxCost = Math.max(...agents.map(a => {
+    const ps = agentProfileStats.get(a.name) ?? [];
+    return ps.reduce((sum, p) => sum + p.totalCostUSD, 0);
+  }), 0.01);
+
   const perAgentDisplay = agents.map((a) => {
-    const s = agentStatsMap.get(a.name);
+    const profileStats = agentProfileStats.get(a.name) ?? [];
+    const totalSessions = profileStats.reduce((sum, p) => sum + p.totalSessions, 0);
+    const totalCostUSD = profileStats.reduce((sum, p) => sum + p.totalCostUSD, 0);
     return {
       agent: a,
-      totalSessions: s?.totalSessions ?? 0,
-      totalCostUSD: s?.totalCostUSD ?? 0,
-      pct: s ? (s.totalCostUSD / maxCost) * 100 : 0,
+      profileCount: Math.max(profileStats.length, 1),
+      totalSessions,
+      totalCostUSD,
+      pct: (totalCostUSD / maxCost) * 100,
     };
   }).sort((a, b) => b.totalCostUSD - a.totalCostUSD);
 
@@ -126,7 +142,7 @@ export function OrgDashboard({ agents, navigate }: OrgDashboardProps) {
                   Create your first agent
                 </button>
               </div>
-            ) : perAgentDisplay.map(({ agent, totalSessions, totalCostUSD }) => {
+            ) : perAgentDisplay.map(({ agent, profileCount, totalSessions, totalCostUSD }) => {
               const isHealthy = agent.storedHealth === 'healthy';
               return (
                 <button
@@ -140,6 +156,9 @@ export function OrgDashboard({ agents, navigate }: OrgDashboardProps) {
                     <div className="text-[11px] text-slate-500">
                       <CloudIcon cloud={agent.cloud} className="text-[11px] mr-1" />
                       {agent.cloud.toUpperCase()} {agent.region}
+                      {profileCount > 1 && (
+                        <span className="ml-1.5 text-indigo-400">{profileCount} profiles</span>
+                      )}
                     </div>
                   </div>
                   <div className="text-right text-[11px]">
