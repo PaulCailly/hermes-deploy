@@ -43,6 +43,7 @@ export function App() {
           <AgentWorkspace
             name={route.name}
             tab={route.tab}
+            profile={route.profile}
             navigate={navigate}
           />
         );

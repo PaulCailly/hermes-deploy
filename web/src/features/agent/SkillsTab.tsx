@@ -4,6 +4,7 @@ import type { AgentSkill } from '../../lib/agent-types';
 
 interface SkillsTabProps {
   name: string;
+  profile: string;
 }
 
 // Files that can be edited in-place (safe formats)
@@ -12,8 +13,8 @@ function isEditable(file: string): boolean {
   return EDITABLE_EXT.some((ext) => file.toLowerCase().endsWith(ext));
 }
 
-export function SkillsTab({ name }: SkillsTabProps) {
-  const skillsQ = useAgentSkills(name);
+export function SkillsTab({ name, profile }: SkillsTabProps) {
+  const skillsQ = useAgentSkills(name, profile);
   const categories = skillsQ.data ?? [];
   const [selectedSkill, setSelectedSkill] = useState<AgentSkill | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -44,8 +45,9 @@ export function SkillsTab({ name }: SkillsTabProps) {
     selectedSkill?.category ?? '',
     selectedSkill?.name ?? '',
     selectedFile ?? '',
+    profile,
   );
-  const writeM = useSkillFileWrite(name);
+  const writeM = useSkillFileWrite(name, profile);
 
   const filteredCategories = categories.map((c) => ({
     ...c,

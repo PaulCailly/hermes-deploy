@@ -15,12 +15,13 @@ const periods = ['7d', '30d', '90d', 'All'] as const;
 
 interface AnalyticsTabProps {
   name: string;
+  profile: string;
 }
 
-export function AnalyticsTab({ name }: AnalyticsTabProps) {
+export function AnalyticsTab({ name, profile }: AnalyticsTabProps) {
   const [period, setPeriod] = useState<typeof periods[number]>('30d');
-  const statsQ = useAgentStats(name);
-  const sessionsQ = useAgentSessions(name, { limit: 500 });
+  const statsQ = useAgentStats(name, profile);
+  const sessionsQ = useAgentSessions(name, { limit: 500, profile });
   const stats = statsQ.data;
   const allSessions = sessionsQ.data ?? [];
 

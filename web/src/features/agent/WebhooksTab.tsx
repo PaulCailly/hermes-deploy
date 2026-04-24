@@ -5,6 +5,7 @@ import type { AgentWebhookRoute, AgentWebhookDelivery } from '../../lib/agent-ty
 
 interface WebhooksTabProps {
   name: string;
+  profile: string;
 }
 
 function DeliverBadge({ deliver }: { deliver: string }) {
@@ -157,8 +158,8 @@ function timeSince(dateStr: string): string {
   return `${days}d ago`;
 }
 
-export function WebhooksTab({ name }: WebhooksTabProps) {
-  const whQ = useAgentWebhooks(name);
+export function WebhooksTab({ name, profile }: WebhooksTabProps) {
+  const whQ = useAgentWebhooks(name, profile);
   const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
 
   if (whQ.isLoading) {

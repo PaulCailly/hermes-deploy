@@ -17,6 +17,7 @@ interface ConfigContent {
 
 interface Props {
   name: string;
+  profile: string;
 }
 
 const LANGUAGE_MAP: Record<string, string> = {
@@ -25,21 +26,23 @@ const LANGUAGE_MAP: Record<string, string> = {
   markdown: 'markdown',
 };
 
-export function ConfigTab({ name }: Props) {
+export function ConfigTab({ name, profile }: Props) {
   const [activeFile, setActiveFile] = useState<string>('hermes-toml');
   const [editorContent, setEditorContent] = useState<string>('');
   const [dirty, setDirty] = useState(false);
   const lastLoadedFile = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
+  const profileQs = profile && profile !== 'default' ? `?profile=${encodeURIComponent(profile)}` : '';
+
   const filesQuery = useQuery({
-    queryKey: ['config-files', name],
-    queryFn: () => apiFetch<{ files: ConfigFile[] }>(`/api/deployments/${encodeURIComponent(name)}/config/files`),
+    queryKey: ['config-files', name, profile],
+    queryFn: () => apiFetch<{ files: ConfigFile[] }>(`/api/deployments/${encodeURIComponent(name)}/config/files${profileQs}`),
   });
 
   const contentQuery = useQuery({
-    queryKey: ['config-content', name, activeFile],
-    queryFn: () => apiFetch<ConfigContent>(`/api/deployments/${encodeURIComponent(name)}/config/${activeFile}`),
+    queryKey: ['config-content', name, activeFile, profile],
+    queryFn: () => apiFetch<ConfigContent>(`/api/deployments/${encodeURIComponent(name)}/config/${activeFile}${profileQs}`),
     enabled: !!activeFile,
   });
 
@@ -54,7 +57,7 @@ export function ConfigTab({ name }: Props) {
 
   const saveMutation = useMutation({
     mutationFn: async (content: string) => {
-      return apiFetch(`/api/deployments/${encodeURIComponent(name)}/config/${activeFile}`, {
+      return apiFetch(`/api/deployments/${encodeURIComponent(name)}/config/${activeFile}${profileQs}`, {
         method: 'PUT',
         body: JSON.stringify({ content }),
       });
@@ -62,7 +65,7 @@ export function ConfigTab({ name }: Props) {
     onSuccess: () => {
       setDirty(false);
       lastLoadedFile.current = null; // Allow next fetch to update editor
-      queryClient.invalidateQueries({ queryKey: ['config-content', name, activeFile] });
+      queryClient.invalidateQueries({ queryKey: ['config-content', name, activeFile, profile] });
     },
   });
 
