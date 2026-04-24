@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/api';
 import { AgentHeader } from './AgentHeader';
 import { AgentTabBar } from './AgentTabBar';
+import { ProfileSwitcher } from './ProfileSwitcher';
 import { OverviewTab } from './OverviewTab';
 import { SessionsTab } from './SessionsTab';
 import { AnalyticsTab } from './AnalyticsTab';
@@ -22,10 +23,13 @@ import type { StatusPayloadDto } from '@hermes/dto';
 interface AgentWorkspaceProps {
   name: string;
   tab: AgentTab;
+  profile?: string;
   navigate: Navigate;
 }
 
-export function AgentWorkspace({ name, tab, navigate }: AgentWorkspaceProps) {
+export function AgentWorkspace({ name, tab, profile, navigate }: AgentWorkspaceProps) {
+  const activeProfile = profile ?? 'default';
+
   const { data: status } = useQuery({
     queryKey: ['agent-status', name],
     queryFn: () => apiFetch<StatusPayloadDto>(`/api/deployments/${encodeURIComponent(name)}`),
@@ -33,21 +37,25 @@ export function AgentWorkspace({ name, tab, navigate }: AgentWorkspaceProps) {
   });
 
   function onTabSelect(t: AgentTab) {
-    navigate({ page: 'agent', name, tab: t });
+    navigate({ page: 'agent', name, tab: t, profile: activeProfile });
+  }
+
+  function onProfileSelect(p: string) {
+    navigate({ page: 'agent', name, tab, profile: p });
   }
 
   function renderTab() {
     switch (tab) {
-      case 'overview':  return <OverviewTab name={name} status={status} navigate={navigate} />;
-      case 'sessions':  return <SessionsTab name={name} />;
-      case 'analytics': return <AnalyticsTab name={name} />;
-      case 'skills':    return <SkillsTab name={name} />;
-      case 'cron':      return <CronTab name={name} />;
-      case 'gateway':   return <GatewayTab name={name} />;
-      case 'webhooks':  return <WebhooksTab name={name} />;
-      case 'plugins':   return <PluginsTab name={name} />;
+      case 'overview':  return <OverviewTab name={name} profile={activeProfile} status={status} navigate={navigate} />;
+      case 'sessions':  return <SessionsTab name={name} profile={activeProfile} />;
+      case 'analytics': return <AnalyticsTab name={name} profile={activeProfile} />;
+      case 'skills':    return <SkillsTab name={name} profile={activeProfile} />;
+      case 'cron':      return <CronTab name={name} profile={activeProfile} />;
+      case 'gateway':   return <GatewayTab name={name} profile={activeProfile} />;
+      case 'webhooks':  return <WebhooksTab name={name} profile={activeProfile} />;
+      case 'plugins':   return <PluginsTab name={name} profile={activeProfile} />;
       case 'infra':     return <InfraTab name={name} status={status} navigate={navigate} />;
-      case 'config':    return <ConfigTab name={name} />;
+      case 'config':    return <ConfigTab name={name} profile={activeProfile} />;
       case 'logs':      return <LogsTab name={name} />;
       case 'ssh':       return <SshTab name={name} />;
       case 'secrets':   return <SecretsTab name={name} />;
@@ -58,6 +66,12 @@ export function AgentWorkspace({ name, tab, navigate }: AgentWorkspaceProps) {
   return (
     <div className="flex flex-col h-screen">
       <AgentHeader name={name} status={status} />
+      <ProfileSwitcher
+        name={name}
+        activeProfile={activeProfile}
+        activeTab={tab}
+        onSelect={onProfileSelect}
+      />
       <AgentTabBar active={tab} onSelect={onTabSelect} />
       <AgentUpdateBanner
         name={name}

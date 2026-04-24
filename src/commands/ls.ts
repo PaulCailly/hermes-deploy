@@ -60,7 +60,7 @@ export async function collectDeploymentSummaries(
     if (opts.live) {
       const factory =
         opts.providerFactory ??
-        ((deployment, resources) =>
+        ((deployment: { cloud: 'aws' | 'gcp'; region: string }, resources: Record<string, unknown>) =>
           createCloudProvider({
             provider: deployment.cloud,
             region: deployment.region,

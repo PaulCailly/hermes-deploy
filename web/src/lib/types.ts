@@ -8,7 +8,7 @@ export type AgentTab = (typeof AGENT_TABS)[number];
 export type Route =
   | { page: 'dashboard' }
   | { page: 'agents' }
-  | { page: 'agent'; name: string; tab: AgentTab }
+  | { page: 'agent'; name: string; tab: AgentTab; profile?: string }
   | { page: 'library' }
   | { page: 'teams' }
   | { page: 'settings' }

@@ -133,16 +133,22 @@ export function SkillsLibrary({ navigate }: SkillsLibraryProps) {
                   Installed on {selectedSkill.agents.length} agent{selectedSkill.agents.length === 1 ? '' : 's'}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {selectedSkill.agents.map((agent) => (
-                    <button
-                      key={agent}
-                      className="bg-[#161822] border border-[#2a2d3a] rounded-md px-3 py-1.5 text-[12px] text-slate-300 hover:border-indigo-500/30 transition-colors"
-                      onClick={() => navigate({ page: 'agent', name: agent, tab: 'skills' })}
-                    >
-                      <i className="fa-solid fa-robot text-[10px] text-indigo-500 mr-1.5" />
-                      {agent}
-                    </button>
-                  ))}
+                  {selectedSkill.agents.map((agent) => {
+                    const [agentName, agentProfile] = agent.split('/');
+                    return (
+                      <button
+                        key={agent}
+                        className="bg-[#161822] border border-[#2a2d3a] rounded-md px-3 py-1.5 text-[12px] text-slate-300 hover:border-indigo-500/30 transition-colors"
+                        onClick={() => navigate({ page: 'agent', name: agentName!, tab: 'skills', profile: agentProfile })}
+                      >
+                        <i className="fa-solid fa-robot text-[10px] text-indigo-500 mr-1.5" />
+                        {agentName}
+                        {agentProfile && agentProfile !== 'default' && (
+                          <span className="text-slate-500 ml-1">/{agentProfile}</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

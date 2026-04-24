@@ -36,6 +36,7 @@ describe('generateHermesNix (M3)', () => {
         secrets_file: './secrets.env.enc',
         documents: { 'bad name.md': './ok.md' },
         environment: {},
+        profiles: [],
       },
     })).toThrow(/invalid in a Nix path literal/);
   });

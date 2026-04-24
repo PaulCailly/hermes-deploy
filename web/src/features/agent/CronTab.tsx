@@ -7,6 +7,7 @@ import type { CronJobInput } from '../../lib/agent-api';
 
 interface CronTabProps {
   name: string;
+  profile: string;
 }
 
 function timeAgo(iso: string): string {
@@ -20,12 +21,12 @@ function timeAgo(iso: string): string {
   return `${Math.floor(days / 7)}w ago`;
 }
 
-export function CronTab({ name }: CronTabProps) {
-  const jobsQ = useAgentCron(name);
-  const toggleM = useCronToggle(name);
-  const createM = useCronCreate(name);
-  const updateM = useCronUpdate(name);
-  const deleteM = useCronDelete(name);
+export function CronTab({ name, profile }: CronTabProps) {
+  const jobsQ = useAgentCron(name, profile);
+  const toggleM = useCronToggle(name, profile);
+  const createM = useCronCreate(name, profile);
+  const updateM = useCronUpdate(name, profile);
+  const deleteM = useCronDelete(name, profile);
 
   const [editing, setEditing] = useState<AgentCronJob | null>(null);
   const [creating, setCreating] = useState(false);

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve as pathResolve } from 'node:path';
+import { basename, resolve as pathResolve } from 'node:path';
 import {
   generateConfigurationNix,
   generateFlakeNix,
@@ -12,8 +12,17 @@ import { computeConfigHash } from '../state/hash.js';
 import { StateStore } from '../state/store.js';
 import { HermesTomlError } from '../schema/load.js';
 import type { SshSession } from '../remote-ops/session.js';
-import type { HermesTomlConfig } from '../schema/hermes-toml.js';
+import type { HermesTomlConfig, ProfileConfig } from '../schema/hermes-toml.js';
 import type { Reporter } from './reporter.js';
+
+const HERMES_HOME = '/var/lib/hermes/.hermes';
+
+/** Defense-in-depth: reject document keys that could escape the target dir. */
+function assertSafeFilename(key: string): void {
+  if (key !== basename(key) || key === '..' || key === '.' || key.includes('/')) {
+    throw new Error(`unsafe document key "${key}" — must be a plain filename`);
+  }
+}
 
 /**
  * Pre-flight check that every file referenced from hermes.toml exists
@@ -42,6 +51,20 @@ export function validateProjectFiles(projectDir: string, config: HermesTomlConfi
       field: 'nix_extra',
       path: pathResolve(projectDir, config.hermes.nix_extra),
     });
+  }
+
+  // Validate profile files
+  for (const profile of config.hermes.profiles) {
+    checks.push(
+      { field: `profiles.${profile.name}.config_file`, path: pathResolve(projectDir, profile.config_file) },
+      { field: `profiles.${profile.name}.secrets_file`, path: pathResolve(projectDir, profile.secrets_file) },
+    );
+    for (const [docName, relPath] of Object.entries(profile.documents)) {
+      checks.push({
+        field: `profiles.${profile.name}.documents."${docName}"`,
+        path: pathResolve(projectDir, relPath),
+      });
+    }
   }
 
   for (const check of checks) {
@@ -93,6 +116,7 @@ export async function uploadAndRebuild(args: BootstrapArgs): Promise<{ lockedRev
 
   // Upload each [hermes.documents] entry to /etc/nixos/<filename>
   for (const [filename, relPath] of Object.entries(config.hermes.documents)) {
+    assertSafeFilename(filename);
     const docContent = readFileSync(pathResolve(projectDir, relPath));
     await session.uploadFile('/etc/nixos/' + filename, docContent);
   }
@@ -209,4 +233,67 @@ export async function recordConfigAndHealthcheck(
     state.deployments[deploymentName]!.health = health.health;
   });
   return health;
+}
+
+/**
+ * Upload files for a single named profile. Creates the profile on the VM
+ * if it doesn't exist, then uploads config.yaml, decrypted secrets (.env),
+ * and documents to the profile's HERMES_HOME directory.
+ */
+export async function uploadProfileFiles(args: {
+  session: SshSession;
+  projectDir: string;
+  profile: ProfileConfig;
+  reporter: Reporter;
+}): Promise<void> {
+  const { session, projectDir, profile, reporter } = args;
+  const profileHome = `${HERMES_HOME}/profiles/${profile.name}`;
+
+  // Check if profile exists, create if not
+  const checkResult = await session.exec(`test -d ${profileHome} && echo exists || echo missing`);
+  if (checkResult.stdout.trim() === 'missing') {
+    reporter.log(`  Creating profile "${profile.name}"...`);
+    const createResult = await session.exec(
+      `su - hermes -s /bin/sh -c "hermes profile create ${profile.name}" 2>&1`,
+    );
+    if (createResult.exitCode !== 0) {
+      throw new Error(`Failed to create profile "${profile.name}": ${createResult.stdout} ${createResult.stderr}`);
+    }
+  }
+
+  // Upload config.yaml
+  const configContent = readFileSync(pathResolve(projectDir, profile.config_file));
+  await session.uploadFile(`${profileHome}/config.yaml`, configContent);
+
+  // Upload encrypted secrets file, then decrypt on-box using sops + age key.
+  const secretsPath = pathResolve(projectDir, profile.secrets_file);
+  const secretsContent = readFileSync(secretsPath);
+  await session.uploadFile(`${profileHome}/secrets.env.enc`, secretsContent);
+  const decryptResult = await session.exec(
+    `SOPS_AGE_KEY_FILE=/var/lib/sops-nix/age.key sops -d ${profileHome}/secrets.env.enc`,
+  );
+  if (decryptResult.exitCode !== 0) {
+    throw new Error(`Failed to decrypt secrets for profile "${profile.name}": ${decryptResult.stderr}`);
+  }
+  await session.uploadFile(`${profileHome}/.env`, decryptResult.stdout);
+
+  // Upload documents
+  for (const [docName, relPath] of Object.entries(profile.documents)) {
+    assertSafeFilename(docName);
+    const docContent = readFileSync(pathResolve(projectDir, relPath));
+    await session.uploadFile(`${profileHome}/${docName}`, docContent);
+  }
+
+  // Fix ownership — uploads as root, hermes user needs access
+  await session.exec(`chown -R hermes:hermes ${profileHome}`);
+}
+
+/** Compute a hash of a profile's files for change detection. */
+export function computeProfileHash(projectDir: string, profile: ProfileConfig): string {
+  const paths = [
+    pathResolve(projectDir, profile.config_file),
+    pathResolve(projectDir, profile.secrets_file),
+    ...Object.values(profile.documents).map(p => pathResolve(projectDir, p)),
+  ];
+  return computeConfigHash(paths, true);
 }

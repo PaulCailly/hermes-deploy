@@ -19,6 +19,19 @@ interface CachedSession {
  */
 export const HERMES_HOME = '/var/lib/hermes/.hermes';
 
+/**
+ * Resolve a profile name to an absolute HERMES_HOME path on the remote VM.
+ * "default" or undefined → the standard HERMES_HOME.
+ * Named profiles → HERMES_HOME/profiles/<name>.
+ */
+export function resolveHermesHome(profile?: string): string {
+  if (!profile || profile === 'default') return HERMES_HOME;
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(profile)) {
+    throw new Error(`invalid profile name: ${profile}`);
+  }
+  return `${HERMES_HOME}/profiles/${profile}`;
+}
+
 const SESSION_TTL_MS = 30_000;
 const sessionCache = new Map<string, CachedSession>();
 
@@ -129,16 +142,17 @@ async function resolvePython3(name: string): Promise<string | null> {
 }
 
 /**
- * Python script executed on the agent. It reads base64-encoded SQL from a
- * command-line argument, runs it against the Hermes state.db, and prints
- * a JSON array to stdout. Timestamps stored as REAL Unix seconds are
- * converted to ISO 8601 strings (any column ending in `_at` or named
- * `timestamp`). Integer ids are stringified for consistent frontend types.
+ * Python script executed on the agent. It reads base64-encoded SQL from
+ * sys.argv[1] and the database path from sys.argv[2], runs the query
+ * against the Hermes state.db, and prints a JSON array to stdout.
+ * Timestamps stored as REAL Unix seconds are converted to ISO 8601 strings
+ * (any column ending in `_at` or named `timestamp`). Integer ids are
+ * stringified for consistent frontend types.
  */
 const QUERY_SCRIPT = String.raw`import sqlite3,sys,json,datetime,base64
 try:
     sql = base64.b64decode(sys.argv[1]).decode('utf-8')
-    con = sqlite3.connect('${HERMES_HOME}/state.db')
+    con = sqlite3.connect(sys.argv[2])
     con.row_factory = sqlite3.Row
     cur = con.execute(sql)
     out = []
@@ -162,14 +176,17 @@ except Exception:
  * Run a SQL query on the agent's state.db and parse the result as JSON.
  * Uses python3 (sqlite3 CLI is not available on NixOS). Returns an empty
  * array on any failure (missing python, missing DB, missing table, bad SQL).
+ *
+ * @param hermesHome — optional override for the HERMES_HOME path (for profiles).
  */
-export async function runSqliteJson<T>(name: string, sql: string): Promise<T[]> {
+export async function runSqliteJson<T>(name: string, sql: string, hermesHome?: string): Promise<T[]> {
   try {
     const pyPath = await resolvePython3(name);
     if (!pyPath) return [];
     const entry = await getOrCreateCacheEntry(name);
     const sqlB64 = Buffer.from(sql, 'utf-8').toString('base64');
-    const cmd = `${shEscape(pyPath)} -c ${shEscape(QUERY_SCRIPT)} ${shEscape(sqlB64)} 2>/dev/null || echo '[]'`;
+    const dbPath = `${hermesHome ?? HERMES_HOME}/state.db`;
+    const cmd = `${shEscape(pyPath)} -c ${shEscape(QUERY_SCRIPT)} ${shEscape(sqlB64)} ${shEscape(dbPath)} 2>/dev/null || echo '[]'`;
     const res = await entry.session.exec(cmd);
     const out = res.stdout.trim();
     if (!out) return [];

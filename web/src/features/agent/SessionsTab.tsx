@@ -6,6 +6,7 @@ import type { AgentSession, AgentMessage } from '../../lib/agent-types';
 
 interface SessionsTabProps {
   name: string;
+  profile: string;
 }
 
 function timeAgo(iso: string): string {
@@ -116,7 +117,7 @@ function MessageBubble({ msg }: { msg: AgentMessage }) {
   );
 }
 
-export function SessionsTab({ name }: SessionsTabProps) {
+export function SessionsTab({ name, profile }: SessionsTabProps) {
   const [filter, setFilter] = useState('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
@@ -128,7 +129,7 @@ export function SessionsTab({ name }: SessionsTabProps) {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const sessionsQ = useAgentSessions(name, { platform: filter, limit: 100, q: searchQ || undefined });
+  const sessionsQ = useAgentSessions(name, { platform: filter, limit: 100, q: searchQ || undefined, profile });
 
   const sessions = sessionsQ.data ?? [];
 
@@ -143,8 +144,8 @@ export function SessionsTab({ name }: SessionsTabProps) {
   const isActive = Boolean(selected && !selected.endedAt);
 
   // Use live WS for active sessions, regular polling query for ended ones
-  const liveMsgs = useLiveAgentMessages(name, selectedId, isActive);
-  const messagesQ = useAgentMessages(name, isActive ? null : selectedId);
+  const liveMsgs = useLiveAgentMessages(name, selectedId, isActive, profile);
+  const messagesQ = useAgentMessages(name, isActive ? null : selectedId, profile);
   const messages: AgentMessage[] = isActive ? liveMsgs.messages : (messagesQ.data ?? []);
   const filters = ['all', 'telegram', 'slack', 'cli', 'cron', 'discord'];
 

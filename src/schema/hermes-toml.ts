@@ -46,18 +46,57 @@ const CachixSchema = z.object({
   }),
 });
 
+// [[hermes.profiles]] — optional named sub-agents running alongside the
+// default agent on the same VM. Each profile is an independent agent
+// instance with its own config, secrets, and documents.
+// Document keys are used as filenames on the remote VM.  Restrict to safe
+// basenames (alphanumeric, hyphens, underscores, dots — no slashes, no "..").
+const SafeFilenameKey = z
+  .string()
+  .min(1)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, {
+    message: 'document key must be a safe filename (no slashes or "..")',
+  })
+  .refine(k => !k.includes('..'), { message: 'document key must not contain ".."' });
+
+const ProfileSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, {
+      message: 'profile name must be lowercase alphanumeric with hyphens, 1-63 chars',
+    })
+    .refine(n => n !== 'default', {
+      message: '"default" is reserved — the flat [hermes] section is the default profile',
+    }),
+  config_file: z.string().min(1),
+  secrets_file: z.string().min(1),
+  documents: z.record(SafeFilenameKey, z.string().min(1)).default({}),
+});
+
+export type ProfileConfig = z.infer<typeof ProfileSchema>;
+
 // [hermes] — pure infrastructure pointers + escape hatch.
 // hermes-deploy intentionally does NOT model the agent's config.yaml
 // schema. The user provides config.yaml directly; we upload it and
 // point services.hermes-agent.configFile at it.
-const HermesSchema = z.object({
-  config_file: z.string().min(1),
-  secrets_file: z.string().min(1),
-  nix_extra: z.string().min(1).optional(),
-  documents: z.record(z.string().min(1), z.string().min(1)).default({}),
-  environment: z.record(z.string().min(1), z.string()).default({}),
-  cachix: CachixSchema.optional(),
-});
+const HermesSchema = z
+  .object({
+    config_file: z.string().min(1),
+    secrets_file: z.string().min(1),
+    nix_extra: z.string().min(1).optional(),
+    documents: z.record(SafeFilenameKey, z.string().min(1)).default({}),
+    environment: z.record(z.string().min(1), z.string()).default({}),
+    cachix: CachixSchema.optional(),
+    profiles: z.array(ProfileSchema).default([]),
+  })
+  .refine(
+    h => {
+      const names = h.profiles.map(p => p.name);
+      return new Set(names).size === names.length;
+    },
+    { message: 'Duplicate profile names are not allowed', path: ['profiles'] },
+  );
 
 const DomainSchema = z.object({
   name: z.string().min(1).regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/, {

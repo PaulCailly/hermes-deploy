@@ -12,6 +12,7 @@ function baseConfig(domain?: { name: string; upstream_port: number }): HermesTom
       secrets_file: './secrets.env.enc',
       documents: {},
       environment: {},
+      profiles: [],
     },
     domain,
   };

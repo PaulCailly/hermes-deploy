@@ -5,6 +5,7 @@ import type { AgentPlugin } from '../../lib/agent-types';
 
 interface PluginsTabProps {
   name: string;
+  profile: string;
 }
 
 function FileViewer({ filename, content }: { filename: string; content: string }) {
@@ -134,8 +135,8 @@ function PluginCard({ plugin }: { plugin: AgentPlugin }) {
   );
 }
 
-export function PluginsTab({ name }: PluginsTabProps) {
-  const pluginsQ = useAgentPlugins(name);
+export function PluginsTab({ name, profile }: PluginsTabProps) {
+  const pluginsQ = useAgentPlugins(name, profile);
 
   if (pluginsQ.isLoading) {
     return <div className="p-5 text-slate-500 text-sm">Loading plugins...</div>;

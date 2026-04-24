@@ -9,6 +9,7 @@ import type { Navigate } from '../../lib/types';
 
 interface OverviewTabProps {
   name: string;
+  profile: string;
   status: StatusPayloadDto | undefined;
   navigate: Navigate;
 }
@@ -29,10 +30,10 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export function OverviewTab({ name, status, navigate }: OverviewTabProps) {
-  const statsQ = useAgentStats(name);
-  const sessionsQ = useAgentSessions(name, { limit: 4 });
-  const gatewayQ = useAgentGateway(name);
+export function OverviewTab({ name, profile, status, navigate }: OverviewTabProps) {
+  const statsQ = useAgentStats(name, profile);
+  const sessionsQ = useAgentSessions(name, { limit: 4, profile });
+  const gatewayQ = useAgentGateway(name, profile);
 
   const stats = statsQ.data;
   const sessions = sessionsQ.data ?? [];
@@ -150,7 +151,7 @@ export function OverviewTab({ name, status, navigate }: OverviewTabProps) {
             </div>
             <button
               className="text-[11px] text-indigo-500 hover:text-indigo-400"
-              onClick={() => navigate({ page: 'agent', name, tab: 'sessions' })}
+              onClick={() => navigate({ page: 'agent', name, tab: 'sessions', profile })}
             >
               View all <i className="fa-solid fa-arrow-right text-[9px]" />
             </button>

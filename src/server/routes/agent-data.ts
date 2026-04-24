@@ -8,13 +8,21 @@ import {
   runRemoteCommand,
   withAgentLock,
   HERMES_HOME,
+  resolveHermesHome,
 } from '../agent-data-source.js';
 import { StateStore } from '../../state/store.js';
 import { getStatePaths } from '../../state/paths.js';
 
 import { estimateCost } from '../model-pricing.js';
 
-const CRON_JOBS_PATH = '/var/lib/hermes/.hermes/cron/jobs.json';
+/** Extract and validate the ?profile= query param, return resolved HERMES_HOME path. */
+function profileHome(query: { profile?: string }): string {
+  return resolveHermesHome(query.profile);
+}
+
+function cronJobsPath(home: string): string {
+  return `${home}/cron/jobs.json`;
+}
 
 // ---------- Configured model fallback ----------
 // Newer hermes-agent versions may not write `model` to the sessions table.
@@ -23,16 +31,18 @@ const CRON_JOBS_PATH = '/var/lib/hermes/.hermes/cron/jobs.json';
 const configuredModelCache = new Map<string, { model: string; expiresAt: number }>();
 const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-async function getConfiguredModel(agentName: string): Promise<string> {
-  const cached = configuredModelCache.get(agentName);
+async function getConfiguredModel(agentName: string, configPath?: string): Promise<string> {
+  const cacheKey = `${agentName}:${configPath ?? 'default'}`;
+  const cached = configuredModelCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.model;
   try {
-    const yaml = await readRemoteFile(agentName, '/etc/nixos/config.yaml');
+    const path = configPath ?? '/etc/nixos/config.yaml';
+    const yaml = await readRemoteFile(agentName, path);
     if (!yaml) return '';
     // Simple YAML parse: look for "default:" under "model:" section
     const match = yaml.match(/model:\s*\n\s+default:\s*(\S+)/);
     const model = match?.[1] ?? '';
-    configuredModelCache.set(agentName, { model, expiresAt: Date.now() + MODEL_CACHE_TTL_MS });
+    configuredModelCache.set(cacheKey, { model, expiresAt: Date.now() + MODEL_CACHE_TTL_MS });
     return model;
   } catch {
     return '';
@@ -134,13 +144,34 @@ const SESSION_COLUMNS = `
 `.trim().replace(/\s+/g, ' ');
 
 export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
-  // ---------- GET /api/agents/:name/stats ----------
-  app.get<{ Params: { name: string } }>('/api/agents/:name/stats', async (req, reply) => {
+  // ---------- GET /api/agents/:name/profiles ----------
+  app.get<{ Params: { name: string } }>('/api/agents/:name/profiles', async (req, reply) => {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
 
+    const profiles: Array<{ name: string; path: string }> = [
+      { name: 'default', path: HERMES_HOME },
+    ];
+
+    const dirs = await listRemoteDir(name, `${HERMES_HOME}/profiles`);
+    for (const dir of dirs) {
+      if (/^[a-z0-9][a-z0-9-]{0,62}$/.test(dir)) {
+        profiles.push({ name: dir, path: `${HERMES_HOME}/profiles/${dir}` });
+      }
+    }
+
+    return profiles;
+  });
+
+  // ---------- GET /api/agents/:name/stats ----------
+  app.get<{ Params: { name: string }; Querystring: { profile?: string } }>('/api/agents/:name/stats', async (req, reply) => {
+    const { name } = req.params;
+    if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
+
     // Fetch per-session data so we can apply fallback pricing when
     // hermes-agent didn't record cost (e.g. Gemini models).
+    const cfgModelPath = home === HERMES_HOME ? undefined : `${home}/config.yaml`;
     const [sessions, cfgModel] = await Promise.all([
       runSqliteJson<{
         model: string | null;
@@ -160,8 +191,8 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
                cache_write_tokens, reasoning_tokens,
                actual_cost_usd, estimated_cost_usd
         FROM sessions
-      `.trim()),
-      getConfiguredModel(name),
+      `.trim(), home),
+      getConfiguredModel(name, cfgModelPath),
     ]);
 
     let totalSessions = 0, totalMessages = 0, totalToolCalls = 0;
@@ -211,10 +242,11 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
   // ---------- GET /api/agents/:name/sessions ----------
   app.get<{
     Params: { name: string };
-    Querystring: { limit?: string; platform?: string; q?: string };
+    Querystring: { limit?: string; platform?: string; q?: string; profile?: string };
   }>('/api/agents/:name/sessions', async (req, reply) => {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
 
     // Clamp to [1, 500]. Negative/zero/NaN/undefined all fall back to default 50.
     const parsedLimit = parseInt(req.query.limit ?? '50', 10);
@@ -237,6 +269,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     }
     const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
 
+    const cfgModelPath = home === HERMES_HOME ? undefined : `${home}/config.yaml`;
     const [rows, fallbackModel] = await Promise.all([
       runSqliteJson<SessionRow>(name, `
         SELECT ${SESSION_COLUMNS}
@@ -244,19 +277,20 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
         ${whereClause}
         ORDER BY started_at DESC
         LIMIT ${limit}
-      `.trim()),
-      getConfiguredModel(name),
+      `.trim(), home),
+      getConfiguredModel(name, cfgModelPath),
     ]);
 
     return rows.map(r => rowToSession(r, fallbackModel));
   });
 
   // ---------- GET /api/agents/:name/sessions/:sid/messages ----------
-  app.get<{ Params: { name: string; sid: string } }>(
+  app.get<{ Params: { name: string; sid: string }; Querystring: { profile?: string } }>(
     '/api/agents/:name/sessions/:sid/messages',
     async (req, reply) => {
       const { name, sid } = req.params;
       if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+      const home = profileHome(req.query);
 
       // Sanitize sid — only allow alphanumeric, underscore, hyphen
       if (!/^[A-Za-z0-9_-]+$/.test(sid)) {
@@ -268,7 +302,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
         FROM messages
         WHERE session_id = '${sid}'
         ORDER BY timestamp ASC
-      `.trim());
+      `.trim(), home);
 
       return rows.map((r) => ({
         id: r.id,
@@ -285,19 +319,20 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ---------- GET /api/agents/:name/skills ----------
-  app.get<{ Params: { name: string } }>('/api/agents/:name/skills', async (req, reply) => {
+  app.get<{ Params: { name: string }; Querystring: { profile?: string } }>('/api/agents/:name/skills', async (req, reply) => {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
 
-    const categories = await listRemoteDir(name, '/var/lib/hermes/.hermes/skills');
+    const categories = await listRemoteDir(name, `${home}/skills`);
     const result: Array<{ name: string; skills: Array<{ id: string; name: string; category: string; files: string[]; requiredConfig: string[] }> }> = [];
 
     for (const cat of categories) {
-      const skills = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${cat}`);
+      const skills = await listRemoteDir(name, `${home}/skills/${cat}`);
       if (skills.length === 0) continue;
       const catSkills = await Promise.all(skills.map(async (skillName) => {
-        const files = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${cat}/${skillName}`);
-        const yamlBody = await readRemoteFile(name, `/var/lib/hermes/.hermes/skills/${cat}/${skillName}/skill.yaml`);
+        const files = await listRemoteDir(name, `${home}/skills/${cat}/${skillName}`);
+        const yamlBody = await readRemoteFile(name, `${home}/skills/${cat}/${skillName}/skill.yaml`);
         const requiredConfig = extractRequiredConfig(yamlBody ?? '');
         return {
           id: `${cat}/${skillName}`,
@@ -313,15 +348,16 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- GET /api/agents/:name/skills/:category/:skill/:file ----------
-  app.get<{ Params: { name: string; category: string; skill: string; file: string } }>(
+  app.get<{ Params: { name: string; category: string; skill: string; file: string }; Querystring: { profile?: string } }>(
     '/api/agents/:name/skills/:category/:skill/:file',
     async (req, reply) => {
       const { name, category, skill, file } = req.params;
       if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+      const home = profileHome(req.query);
       if ([category, skill, file].some((p) => p.includes('..') || p.includes('/'))) {
         return reply.code(400).send({ error: 'invalid path' });
       }
-      const body = await readRemoteFile(name, `/var/lib/hermes/.hermes/skills/${category}/${skill}/${file}`);
+      const body = await readRemoteFile(name, `${home}/skills/${category}/${skill}/${file}`);
       if (body === null) return reply.code(404).send({ error: 'file not found' });
       return reply.type('text/plain').send(body);
     },
@@ -335,11 +371,13 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
   const EDITABLE_SKILL_EXTS = ['.md', '.txt', '.yaml', '.yml', '.json'];
   app.put<{
     Params: { name: string; category: string; skill: string; file: string };
+    Querystring: { profile?: string };
   }>(
     '/api/agents/:name/skills/:category/:skill/:file',
     async (req, reply) => {
       const { name, category, skill, file } = req.params;
       if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+      const home = profileHome(req.query);
       if ([category, skill, file].some((p) => p.includes('..') || p.includes('/') || p.startsWith('.'))) {
         return reply.code(400).send({ error: 'invalid path' });
       }
@@ -351,7 +389,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       // Verify the file already exists under the skill directory. We only
       // permit edits to files enumerated by the skill listing — no new-file
       // creation via this endpoint.
-      const existingFiles = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${category}/${skill}`);
+      const existingFiles = await listRemoteDir(name, `${home}/skills/${category}/${skill}`);
       if (!existingFiles.includes(file)) {
         return reply.code(404).send({ error: 'file not found in skill directory' });
       }
@@ -367,7 +405,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       }
 
       try {
-        await writeRemoteFile(name, `/var/lib/hermes/.hermes/skills/${category}/${skill}/${file}`, content);
+        await writeRemoteFile(name, `${home}/skills/${category}/${skill}/${file}`, content);
         return { ok: true };
       } catch (e: unknown) {
         return reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
@@ -376,19 +414,21 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ---------- GET /api/agents/:name/cron ----------
-  app.get<{ Params: { name: string } }>('/api/agents/:name/cron', async (req, reply) => {
+  app.get<{ Params: { name: string }; Querystring: { profile?: string } }>('/api/agents/:name/cron', async (req, reply) => {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
 
-    const data = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
+    const data = await readRemoteJson<unknown>(name, cronJobsPath(home));
     if (!Array.isArray(data)) return [];
     return data.map(normalizeCronJob).filter(Boolean);
   });
 
   // ---------- GET /api/agents/:name/gateway ----------
-  app.get<{ Params: { name: string } }>('/api/agents/:name/gateway', async (req, reply) => {
+  app.get<{ Params: { name: string }; Querystring: { profile?: string } }>('/api/agents/:name/gateway', async (req, reply) => {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
 
     const data = await readRemoteJson<{
       pid?: number;
@@ -396,7 +436,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
       gateway_state?: string;
       platforms?: Record<string, { state?: string; connected?: boolean }>;
       updated_at?: string;
-    }>(name, '/var/lib/hermes/.hermes/gateway_state.json');
+    }>(name, `${home}/gateway_state.json`);
 
     if (!data) {
       return { isRunning: false, platforms: [] };
@@ -420,7 +460,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
 
   // ---------- POST /api/agents/:name/gateway/:action ----------
   // action: start | stop | restart
-  app.post<{ Params: { name: string; action: string } }>(
+  app.post<{ Params: { name: string; action: string }; Querystring: { profile?: string } }>(
     '/api/agents/:name/gateway/:action',
     async (req, reply) => {
       const { name, action } = req.params;
@@ -429,7 +469,12 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: 'invalid action' });
       }
       try {
-        const res = await runRemoteCommand(name, `hermes gateway ${action} 2>&1`);
+        // Validate profile name before interpolating into shell command
+        const home = profileHome(req.query);
+        const profileFlag = home !== HERMES_HOME && req.query.profile
+          ? `-p '${req.query.profile.replace(/'/g, "'\\''")}' `
+          : '';
+        const res = await runRemoteCommand(name, `hermes ${profileFlag}gateway ${action} 2>&1`);
         return reply.code(res.exitCode === 0 ? 200 : 500).send({
           ok: res.exitCode === 0,
           exitCode: res.exitCode,
@@ -442,9 +487,10 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ---------- GET /api/agents/:name/webhooks ----------
-  app.get<{ Params: { name: string } }>('/api/agents/:name/webhooks', async (req, reply) => {
+  app.get<{ Params: { name: string }; Querystring: { profile?: string } }>('/api/agents/:name/webhooks', async (req, reply) => {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
 
     // 1. Check webhook health (the platform HTTP server on port 8644)
     let healthy = false;
@@ -467,7 +513,7 @@ export async function agentDataRoutes(app: FastifyInstance): Promise<void> {
     try {
       const parseRes = await runRemoteCommand(
         name,
-        `PY=$(grep -ho "/nix/store/[^']*/bin/python3" /nix/store/*/bin/hermes 2>/dev/null | head -1) && cat ${HERMES_HOME}/config.yaml | $PY -c "
+        `PY=$(grep -ho "/nix/store/[^']*/bin/python3" /nix/store/*/bin/hermes 2>/dev/null | head -1) && cat ${home}/config.yaml | $PY -c "
 import sys, yaml, json
 cfg = yaml.safe_load(sys.stdin)
 wh = cfg.get('platforms', {}).get('webhook', {}).get('extra', {}).get('routes', {})
@@ -488,7 +534,7 @@ json.dump(wh, sys.stdout)
       prompt?: string;
       skills?: string[];
       created_at?: string;
-    }>>(name, `${HERMES_HOME}/webhook_subscriptions.json`);
+    }>>(name, `${home}/webhook_subscriptions.json`);
 
     // 4. Merge routes
     const routes = [
@@ -538,6 +584,7 @@ json.dump(wh, sys.stdout)
          WHERE source LIKE '%webhook%'
          ORDER BY started_at DESC
          LIMIT 50`,
+        home,
       );
       for (const row of rows) {
         const parts = (row.source ?? '').split(':');
@@ -572,7 +619,7 @@ json.dump(wh, sys.stdout)
 import json, os
 sids = ${JSON.stringify(sessionIds)}
 for sid in sids:
-    path = f"/var/lib/hermes/.hermes/sessions/session_{sid}.json"
+    path = f"${home}/sessions/session_{sid}.json"
     if not os.path.exists(path):
         print(json.dumps({"sid": sid}))
         continue
@@ -636,9 +683,15 @@ PYEOF`,
   });
 
   // ---------- GET /api/agents/:name/plugins ----------
-  app.get<{ Params: { name: string } }>('/api/agents/:name/plugins', async (req, reply) => {
+  app.get<{ Params: { name: string }; Querystring: { profile?: string } }>('/api/agents/:name/plugins', async (req, reply) => {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
+
+    // Derive plugins dir from home — avoids using unvalidated query param
+    const pluginsDir = home === HERMES_HOME
+      ? '~/.hermes/plugins'
+      : `${home}/plugins`;
 
     try {
       const res = await runRemoteCommand(
@@ -651,7 +704,7 @@ try:
     mgr = get_plugin_manager()
     plugins = mgr.list_plugins()
     # Enrich with source files
-    plugins_dir = os.path.expanduser('~/.hermes/plugins')
+    plugins_dir = os.path.expanduser('${pluginsDir}')
     for p in plugins:
         pname = p['name']
         pdir = os.path.join(plugins_dir, pname)
@@ -684,11 +737,12 @@ except Exception as e:
   // Live stream of messages for an active session. Server polls the DB every
   // 2s and pushes the full message list when the count changes. On the
   // client, this replaces the React Query snapshot for the current session.
-  app.get<{ Params: { name: string; sid: string } }>(
+  app.get<{ Params: { name: string; sid: string }; Querystring: { profile?: string } }>(
     '/ws/agents/:name/sessions/:sid/messages',
     { websocket: true },
     async (socket, request) => {
       const { name, sid } = request.params;
+      const home = profileHome(request.query as { profile?: string });
       if (!(await agentExists(name))) {
         socket.close(4004, 'agent not found');
         return;
@@ -712,7 +766,7 @@ except Exception as e:
           FROM messages
           WHERE session_id = '${sid}'
           ORDER BY timestamp ASC
-        `.trim());
+        `.trim(), home);
 
         const lastRowTs = rows.length > 0 ? rows[rows.length - 1]!.timestamp : '';
         if (rows.length === lastCount && lastRowTs === lastTs) return;
@@ -752,11 +806,12 @@ except Exception as e:
 
   // ---------- WS /ws/agents/:name/stats ----------
   // Live stats deltas (polled every 5s).
-  app.get<{ Params: { name: string } }>(
+  app.get<{ Params: { name: string }; Querystring: { profile?: string } }>(
     '/ws/agents/:name/stats',
     { websocket: true },
     async (socket, request) => {
       const { name } = request.params;
+      const home = profileHome(request.query as { profile?: string });
       if (!(await agentExists(name))) {
         socket.close(4004, 'agent not found');
         return;
@@ -779,7 +834,7 @@ except Exception as e:
                  input_tokens, output_tokens,
                  actual_cost_usd, estimated_cost_usd
           FROM sessions
-        `.trim());
+        `.trim(), home);
 
         let total_sessions = 0, total_messages = 0, total_tool_calls = 0;
         let total_input_tokens = 0, total_output_tokens = 0, total_cost_usd = 0;
@@ -819,18 +874,20 @@ except Exception as e:
   );
 
   // ---------- PATCH /api/agents/:name/cron/:jobId/toggle ----------
-  // Toggle the `enabled` field on a cron job in /var/lib/hermes/.hermes/cron/jobs.json
-  app.patch<{ Params: { name: string; jobId: string } }>(
+  // Toggle the `enabled` field on a cron job
+  app.patch<{ Params: { name: string; jobId: string }; Querystring: { profile?: string } }>(
     '/api/agents/:name/cron/:jobId/toggle',
     async (req, reply) => {
       const { name, jobId } = req.params;
       if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+      const home = profileHome(req.query);
       if (!/^[A-Za-z0-9_-]+$/.test(jobId)) {
         return reply.code(400).send({ error: 'invalid job id' });
       }
 
       return withAgentLock(name, async () => {
-        const data = await readRemoteJson<unknown>(name, CRON_JOBS_PATH);
+        const cronPath = cronJobsPath(home);
+        const data = await readRemoteJson<unknown>(name, cronPath);
         if (!Array.isArray(data)) {
           reply.code(404).send({ error: 'jobs.json not found or invalid' });
           return;
@@ -845,7 +902,7 @@ except Exception as e:
         job.enabled = !(job.enabled !== false);
 
         try {
-          await writeRemoteFile(name, CRON_JOBS_PATH, JSON.stringify(jobs, null, 2));
+          await writeRemoteFile(name, cronPath, JSON.stringify(jobs, null, 2));
           return { ok: true, enabled: job.enabled };
         } catch (e: unknown) {
           reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
@@ -857,9 +914,10 @@ except Exception as e:
   // ---------- POST /api/agents/:name/cron ----------
   // Create a new cron job. Server generates the id. Body includes name,
   // prompt, schedule ({kind, display?, expression?}), optional model/deliver.
-  app.post<{ Params: { name: string } }>('/api/agents/:name/cron', async (req, reply) => {
+  app.post<{ Params: { name: string }; Querystring: { profile?: string } }>('/api/agents/:name/cron', async (req, reply) => {
     const { name } = req.params;
     if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
 
     const body = req.body as Record<string, unknown> | null;
     if (!body || typeof body.name !== 'string' || typeof body.prompt !== 'string') {
@@ -867,7 +925,8 @@ except Exception as e:
     }
 
     return withAgentLock(name, async () => {
-      const existing = await readRemoteJson<unknown>(name, CRON_JOBS_PATH);
+      const cronPath = cronJobsPath(home);
+      const existing = await readRemoteJson<unknown>(name, cronPath);
       const jobs = Array.isArray(existing) ? (existing as Array<Record<string, unknown>>) : [];
 
       const newId = genCronId();
@@ -886,7 +945,7 @@ except Exception as e:
       jobs.push(newJob);
 
       try {
-        await writeRemoteFile(name, CRON_JOBS_PATH, JSON.stringify(jobs, null, 2));
+        await writeRemoteFile(name, cronPath, JSON.stringify(jobs, null, 2));
         return { ok: true, id: newId };
       } catch (e: unknown) {
         reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
@@ -896,11 +955,12 @@ except Exception as e:
 
   // ---------- PUT /api/agents/:name/cron/:jobId ----------
   // Update a cron job in place. Body replaces the updateable fields.
-  app.put<{ Params: { name: string; jobId: string } }>(
+  app.put<{ Params: { name: string; jobId: string }; Querystring: { profile?: string } }>(
     '/api/agents/:name/cron/:jobId',
     async (req, reply) => {
       const { name, jobId } = req.params;
       if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+      const home = profileHome(req.query);
       if (!/^[A-Za-z0-9_-]+$/.test(jobId)) {
         return reply.code(400).send({ error: 'invalid job id' });
       }
@@ -909,7 +969,8 @@ except Exception as e:
       if (!body) return reply.code(400).send({ error: 'body required' });
 
       return withAgentLock(name, async () => {
-        const existing = await readRemoteJson<unknown>(name, CRON_JOBS_PATH);
+        const cronPath = cronJobsPath(home);
+        const existing = await readRemoteJson<unknown>(name, cronPath);
         if (!Array.isArray(existing)) {
           reply.code(404).send({ error: 'jobs.json not found' });
           return;
@@ -933,7 +994,7 @@ except Exception as e:
         if (Array.isArray(body.skills)) job.skills = body.skills;
 
         try {
-          await writeRemoteFile(name, CRON_JOBS_PATH, JSON.stringify(jobs, null, 2));
+          await writeRemoteFile(name, cronPath, JSON.stringify(jobs, null, 2));
           return { ok: true };
         } catch (e: unknown) {
           reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });
@@ -943,17 +1004,19 @@ except Exception as e:
   );
 
   // ---------- DELETE /api/agents/:name/cron/:jobId ----------
-  app.delete<{ Params: { name: string; jobId: string } }>(
+  app.delete<{ Params: { name: string; jobId: string }; Querystring: { profile?: string } }>(
     '/api/agents/:name/cron/:jobId',
     async (req, reply) => {
       const { name, jobId } = req.params;
       if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+      const home = profileHome(req.query);
       if (!/^[A-Za-z0-9_-]+$/.test(jobId)) {
         return reply.code(400).send({ error: 'invalid job id' });
       }
 
       return withAgentLock(name, async () => {
-        const existing = await readRemoteJson<unknown>(name, CRON_JOBS_PATH);
+        const cronPath = cronJobsPath(home);
+        const existing = await readRemoteJson<unknown>(name, cronPath);
         if (!Array.isArray(existing)) {
           reply.code(404).send({ error: 'jobs.json not found' });
           return;
@@ -967,7 +1030,7 @@ except Exception as e:
         }
 
         try {
-          await writeRemoteFile(name, CRON_JOBS_PATH, JSON.stringify(filtered, null, 2));
+          await writeRemoteFile(name, cronPath, JSON.stringify(filtered, null, 2));
           return { ok: true };
         } catch (e: unknown) {
           reply.code(500).send({ error: e instanceof Error ? e.message : 'write failed' });

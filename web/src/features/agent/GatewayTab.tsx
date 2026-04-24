@@ -5,11 +5,12 @@ import { useAgentGateway, useGatewayAction } from '../../lib/agent-api';
 
 interface GatewayTabProps {
   name: string;
+  profile: string;
 }
 
-export function GatewayTab({ name }: GatewayTabProps) {
-  const gwQ = useAgentGateway(name);
-  const actionM = useGatewayAction(name);
+export function GatewayTab({ name, profile }: GatewayTabProps) {
+  const gwQ = useAgentGateway(name, profile);
+  const actionM = useGatewayAction(name, profile);
   const [lastOutput, setLastOutput] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
 

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { StateStore } from '../../state/store.js';
 import { getStatePaths } from '../../state/paths.js';
-import { runSqliteJson, readRemoteJson } from '../agent-data-source.js';
+import { runSqliteJson, readRemoteJson, listRemoteDir, readRemoteFile, HERMES_HOME, resolveHermesHome } from '../agent-data-source.js';
 import { estimateCost } from '../model-pricing.js';
 
 // ---------- Per-agent row shapes ----------
@@ -110,20 +110,44 @@ async function listAgents(): Promise<string[]> {
   return Object.keys(state.deployments);
 }
 
+async function discoverProfiles(names: string[]): Promise<Map<string, string[]>> {
+  const results = await Promise.allSettled(
+    names.map(async (name) => {
+      const dirs = await listRemoteDir(name, `${HERMES_HOME}/profiles`);
+      const named = dirs.filter((d) => d !== 'default' && /^[a-z0-9][a-z0-9-]{0,62}$/.test(d));
+      return { name, profiles: ['default', ...named] };
+    }),
+  );
+  const map = new Map<string, string[]>();
+  for (const r of results) {
+    if (r.status === 'fulfilled') map.set(r.value.name, r.value.profiles);
+  }
+  return map;
+}
+
+// Use resolveHermesHome from agent-data-source (imported above)
+
 export async function orgRoutes(app: FastifyInstance): Promise<void> {
   // ---------- GET /api/org/stats ----------
   // Aggregate stats across all agents + per-agent breakdown for the fleet list
   app.get('/api/org/stats', async () => {
     const names = await listAgents();
+    const profileMap = await discoverProfiles(names);
+
     const results = await Promise.allSettled(
-      names.map(async (name) => {
-        const rows = await runSqliteJson<AgentSessionRow>(name, SESSIONS_SQL);
-        return { name, stats: computeAgentStats(rows) };
+      names.flatMap((name) => {
+        const profiles = profileMap.get(name) ?? ['default'];
+        return profiles.map(async (profile) => {
+          const home = resolveHermesHome(profile);
+          const rows = await runSqliteJson<AgentSessionRow>(name, SESSIONS_SQL, home);
+          return { name, profile, stats: computeAgentStats(rows) };
+        });
       }),
     );
 
     const perAgent: Array<{
       name: string;
+      profile: string;
       totalSessions: number;
       totalCostUSD: number;
       activeSessions: number;
@@ -155,6 +179,7 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
 
       perAgent.push({
         name: r.value.name,
+        profile: r.value.profile,
         totalSessions: s.total_sessions ?? 0,
         totalCostUSD: s.total_cost_usd ?? 0,
         activeSessions: s.active_sessions ?? 0,
@@ -183,16 +208,23 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { limit?: string } }>('/api/org/activity', async (req) => {
     const limit = Math.min(parseInt(req.query.limit ?? '20', 10) || 20, 100);
     const names = await listAgents();
+    const profileMap = await discoverProfiles(names);
+
     const results = await Promise.allSettled(
-      names.map(async (name) => {
-        const rows = await runSqliteJson<RecentSessionRow>(name, RECENT_SESSIONS_SQL);
-        return { name, rows };
+      names.flatMap((name) => {
+        const profiles = profileMap.get(name) ?? ['default'];
+        return profiles.map(async (profile) => {
+          const home = resolveHermesHome(profile);
+          const rows = await runSqliteJson<RecentSessionRow>(name, RECENT_SESSIONS_SQL, home);
+          return { name, profile, rows };
+        });
       }),
     );
 
     const flat: Array<{
       id: string;
       agent: string;
+      profile: string;
       title: string;
       source: string;
       startedAt: string;
@@ -205,8 +237,9 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       if (r.status !== 'fulfilled') continue;
       for (const row of r.value.rows) {
         flat.push({
-          id: `${r.value.name}/${row.id}`,
+          id: `${r.value.name}/${r.value.profile}/${row.id}`,
           agent: r.value.name,
+          profile: r.value.profile,
           title: row.title ?? '(untitled)',
           source: row.source ?? 'unknown',
           startedAt: row.started_at,
@@ -226,17 +259,24 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
   // Upcoming cron jobs across all agents (enabled only, sorted by next run)
   app.get('/api/org/crons', async () => {
     const names = await listAgents();
+    const profileMap = await discoverProfiles(names);
+
     const results = await Promise.allSettled(
-      names.map(async (name) => {
-        const data = await readRemoteJson<unknown>(name, '/var/lib/hermes/.hermes/cron/jobs.json');
-        if (!Array.isArray(data)) return { name, jobs: [] as CronJobJson[] };
-        return { name, jobs: data as CronJobJson[] };
+      names.flatMap((name) => {
+        const profiles = profileMap.get(name) ?? ['default'];
+        return profiles.map(async (profile) => {
+          const home = resolveHermesHome(profile);
+          const data = await readRemoteJson<unknown>(name, `${home}/cron/jobs.json`);
+          if (!Array.isArray(data)) return { name, profile, jobs: [] as CronJobJson[] };
+          return { name, profile, jobs: data as CronJobJson[] };
+        });
       }),
     );
 
     const flat: Array<{
       id: string;
       agent: string;
+      profile: string;
       name: string;
       nextRun: string;
     }> = [];
@@ -245,9 +285,12 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       if (r.status !== 'fulfilled') continue;
       for (const j of r.value.jobs) {
         if (!j.enabled) continue;
+        const jobId = j.id ?? j.name ?? j.schedule?.expression;
+        if (!jobId) continue;
         flat.push({
-          id: `${r.value.name}/${j.id ?? ''}`,
+          id: `${r.value.name}/${r.value.profile}/${jobId}`,
           agent: r.value.name,
+          profile: r.value.profile,
           name: j.name ?? '(unnamed)',
           nextRun: j.nextRunAt ?? j.schedule?.display ?? j.schedule?.expression ?? 'scheduled',
         });
@@ -268,31 +311,35 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
   // Aggregate skills across all agents, deduplicated by category/name
   app.get('/api/org/skills', async () => {
     const names = await listAgents();
+    const profileMap = await discoverProfiles(names);
+
     const results = await Promise.allSettled(
-      names.map(async (name) => {
-        // Reuse the per-agent skills endpoint logic inline
-        const { listRemoteDir, readRemoteFile } = await import('../agent-data-source.js');
-        const cats = await listRemoteDir(name, '/var/lib/hermes/.hermes/skills');
-        const cats2: Array<{ name: string; skills: Array<{ id: string; name: string; category: string; files: string[]; requiredConfig: string[]; agents: string[] }> }> = [];
-        for (const cat of cats) {
-          const skills = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${cat}`);
-          if (skills.length === 0) continue;
-          const catSkills = await Promise.all(skills.map(async (skillName) => {
-            const files = await listRemoteDir(name, `/var/lib/hermes/.hermes/skills/${cat}/${skillName}`);
-            const yaml = await readRemoteFile(name, `/var/lib/hermes/.hermes/skills/${cat}/${skillName}/skill.yaml`);
-            const requiredConfig = extractRequiredConfig(yaml ?? '');
-            return {
-              id: `${cat}/${skillName}`,
-              name: skillName,
-              category: cat,
-              files,
-              requiredConfig,
-              agents: [name],
-            };
-          }));
-          cats2.push({ name: cat, skills: catSkills });
-        }
-        return { name, categories: cats2 };
+      names.flatMap((name) => {
+        const profiles = profileMap.get(name) ?? ['default'];
+        return profiles.map(async (profile) => {
+          const home = resolveHermesHome(profile);
+          const cats = await listRemoteDir(name, `${home}/skills`);
+          const cats2: Array<{ name: string; skills: Array<{ id: string; name: string; category: string; files: string[]; requiredConfig: string[]; agents: string[] }> }> = [];
+          for (const cat of cats) {
+            const skills = await listRemoteDir(name, `${home}/skills/${cat}`);
+            if (skills.length === 0) continue;
+            const catSkills = await Promise.all(skills.map(async (skillName) => {
+              const files = await listRemoteDir(name, `${home}/skills/${cat}/${skillName}`);
+              const yaml = await readRemoteFile(name, `${home}/skills/${cat}/${skillName}/skill.yaml`);
+              const requiredConfig = extractRequiredConfig(yaml ?? '');
+              return {
+                id: `${cat}/${skillName}`,
+                name: skillName,
+                category: cat,
+                files,
+                requiredConfig,
+                agents: [`${name}/${profile}`],
+              };
+            }));
+            cats2.push({ name: cat, skills: catSkills });
+          }
+          return { name, profile, categories: cats2 };
+        });
       }),
     );
 
