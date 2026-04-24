@@ -6,7 +6,7 @@ import { getStatePaths } from '../state/paths.js';
 import type { CloudProvider, ProvisionSpec, ResourceLedger } from '../cloud/core.js';
 import type { SshSession } from '../remote-ops/session.js';
 import { createPlainReporter, type Reporter } from './reporter.js';
-import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles } from './shared.js';
+import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles, uploadProfileFiles, computeProfileHash } from './shared.js';
 
 export interface DeployOptions {
   projectDir: string;
@@ -248,6 +248,34 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
       return { health: 'unhealthy', publicIp: instance.publicIp };
     }
     reporter.phaseDone('healthcheck');
+
+    // === Phase 5.5 — upload profile files ===
+    if (config.hermes.profiles.length > 0) {
+      reporter.log(`Uploading ${config.hermes.profiles.length} profile(s)...`);
+      const profileSession = await opts.sessionFactory(instance.publicIp, readFileSync(sshKeyPath, 'utf-8'));
+      try {
+        for (const profile of config.hermes.profiles) {
+          reporter.log(`  Profile: ${profile.name}`);
+          await uploadProfileFiles({
+            session: profileSession,
+            projectDir: opts.projectDir,
+            profile,
+            reporter,
+          });
+        }
+        // Store profile hashes
+        await store.update(state => {
+          const d = state.deployments[config.name]!;
+          d.profile_hashes = {};
+          for (const profile of config.hermes.profiles) {
+            d.profile_hashes[profile.name] = computeProfileHash(opts.projectDir, profile);
+          }
+        });
+      } finally {
+        await profileSession.dispose();
+      }
+    }
+
     reporter.success(`hermes-agent is running at ${instance.publicIp}`);
     return { health: 'healthy', publicIp: instance.publicIp };
   } finally {

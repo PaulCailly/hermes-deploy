@@ -5,7 +5,7 @@ import { StateStore } from '../state/store.js';
 import { getStatePaths } from '../state/paths.js';
 import { computeConfigHash } from '../state/hash.js';
 import { createPlainReporter, type Reporter } from './reporter.js';
-import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles } from './shared.js';
+import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles, uploadProfileFiles, computeProfileHash } from './shared.js';
 import type { CloudProvider, NetworkRules, ResourceLedger } from '../cloud/core.js';
 import type { SshSession } from '../remote-ops/session.js';
 
@@ -222,6 +222,46 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
       return { health: 'unhealthy', publicIp: deployment.instance_ip, skipped: false };
     }
     reporter.phaseDone('healthcheck');
+
+    // === Phase 5.5 — upload changed profile files ===
+    if (config.hermes.profiles.length > 0) {
+      const storedHashes = deployment.profile_hashes ?? {};
+      const changedProfiles = config.hermes.profiles.filter(p => {
+        const newHash = computeProfileHash(deployment.project_path, p);
+        return newHash !== storedHashes[p.name];
+      });
+
+      if (changedProfiles.length > 0) {
+        reporter.log(`Uploading ${changedProfiles.length} changed profile(s)...`);
+        const profileSession = await opts.sessionFactory(deployment.instance_ip, readFileSync(deployment.ssh_key_path, 'utf-8'));
+        try {
+          for (const profile of changedProfiles) {
+            reporter.log(`  Profile: ${profile.name}`);
+            await uploadProfileFiles({
+              session: profileSession,
+              projectDir: deployment.project_path,
+              profile,
+              reporter,
+            });
+            // Restart gateway for this profile if config changed
+            await profileSession.exec(
+              `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1 || true`,
+            );
+          }
+          // Update stored hashes for all profiles (not just changed ones)
+          await store.update(state => {
+            const d = state.deployments[opts.deploymentName]!;
+            if (!d.profile_hashes) d.profile_hashes = {};
+            for (const profile of config.hermes.profiles) {
+              d.profile_hashes[profile.name] = computeProfileHash(deployment.project_path, profile);
+            }
+          });
+        } finally {
+          await profileSession.dispose();
+        }
+      }
+    }
+
     reporter.success(`${opts.deploymentName} updated`);
     return { health: 'healthy', publicIp: deployment.instance_ip, skipped: false };
   } finally {
