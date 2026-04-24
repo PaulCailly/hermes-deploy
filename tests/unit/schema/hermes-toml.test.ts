@@ -128,4 +128,69 @@ describe('HermesTomlSchema (M3)', () => {
       expect(result.data.domain).toBeUndefined();
     }
   });
+
+  it('accepts a config with [[hermes.profiles]]', () => {
+    const raw = loadFixture('m3-profiles.toml');
+    const result = HermesTomlSchema.safeParse(raw);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.hermes.profiles).toHaveLength(2);
+      expect(result.data.hermes.profiles[0]!.name).toBe('coder');
+      expect(result.data.hermes.profiles[0]!.config_file).toBe('./profiles/coder/config.yaml');
+      expect(result.data.hermes.profiles[0]!.documents).toEqual({ 'SOUL.md': './profiles/coder/SOUL.md' });
+      expect(result.data.hermes.profiles[1]!.name).toBe('assistant');
+      expect(result.data.hermes.profiles[1]!.documents).toEqual({});
+    }
+  });
+
+  it('defaults hermes.profiles to empty array when not present', () => {
+    const raw = loadFixture('m3-minimal.toml');
+    const result = HermesTomlSchema.safeParse(raw);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.hermes.profiles).toEqual([]);
+    }
+  });
+
+  it('rejects profile named "default"', () => {
+    const result = HermesTomlSchema.safeParse({
+      name: 'profile-default',
+      cloud: { provider: 'aws', profile: 'd', region: 'eu-west-3', size: 'small' },
+      hermes: {
+        config_file: './c.yaml',
+        secrets_file: './s.env.enc',
+        profiles: [{ name: 'default', config_file: './c.yaml', secrets_file: './s.env.enc' }],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects duplicate profile names', () => {
+    const result = HermesTomlSchema.safeParse({
+      name: 'profile-dup',
+      cloud: { provider: 'aws', profile: 'd', region: 'eu-west-3', size: 'small' },
+      hermes: {
+        config_file: './c.yaml',
+        secrets_file: './s.env.enc',
+        profiles: [
+          { name: 'coder', config_file: './c1.yaml', secrets_file: './s1.env.enc' },
+          { name: 'coder', config_file: './c2.yaml', secrets_file: './s2.env.enc' },
+        ],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects profile with invalid name format', () => {
+    const result = HermesTomlSchema.safeParse({
+      name: 'profile-bad-name',
+      cloud: { provider: 'aws', profile: 'd', region: 'eu-west-3', size: 'small' },
+      hermes: {
+        config_file: './c.yaml',
+        secrets_file: './s.env.enc',
+        profiles: [{ name: 'My Bot!', config_file: './c.yaml', secrets_file: './s.env.enc' }],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
 });

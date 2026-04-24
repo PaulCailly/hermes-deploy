@@ -1,0 +1,27 @@
+name = "test-m3-profiles"
+
+[cloud]
+provider = "aws"
+profile = "acme"
+region = "eu-west-3"
+size = "small"
+
+[hermes]
+config_file = "./config.yaml"
+secrets_file = "./secrets.env.enc"
+
+[hermes.documents]
+"SOUL.md" = "./SOUL.md"
+
+[[hermes.profiles]]
+name = "coder"
+config_file = "./profiles/coder/config.yaml"
+secrets_file = "./profiles/coder/secrets.env.enc"
+
+[hermes.profiles.documents]
+"SOUL.md" = "./profiles/coder/SOUL.md"
+
+[[hermes.profiles]]
+name = "assistant"
+config_file = "./profiles/assistant/config.yaml"
+secrets_file = "./profiles/assistant/secrets.env.enc"
