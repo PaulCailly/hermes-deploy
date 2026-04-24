@@ -41,6 +41,7 @@ const BaseDeploymentSchema = z.object({
   hermes_agent_tag: z.string().default(''),
   domain_name: z.string().min(1).optional(),
   dns_record_id: z.string().min(1).optional(),
+  profile_hashes: z.record(z.string(), z.string()).optional(),
 });
 
 const DeploymentSchema = z.discriminatedUnion('cloud', [
