@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockGetZones, mockCreateChange, mockGetRecords } = vi.hoisted(() => ({
+const { mockGetZones, mockCreateChange, mockGetRecords, mockRecord } = vi.hoisted(() => ({
   mockGetZones: vi.fn(),
   mockCreateChange: vi.fn(),
   mockGetRecords: vi.fn(),
+  mockRecord: vi.fn(),
 }));
 
 vi.mock('@google-cloud/dns', () => ({
@@ -13,6 +14,7 @@ vi.mock('@google-cloud/dns', () => ({
       name,
       createChange: mockCreateChange,
       getRecords: mockGetRecords,
+      record: mockRecord,
     })),
   })),
 }));
@@ -58,30 +60,36 @@ describe('upsertDnsRecordGcp', () => {
   beforeEach(() => {
     mockGetRecords.mockReset();
     mockCreateChange.mockReset();
+    mockRecord.mockReset();
   });
 
   it('creates A record when none exists', async () => {
+    const fakeRecord = { name: 'jarvis.backresto.com.', type: 'A', ttl: 300, data: ['1.2.3.4'] };
     mockGetRecords.mockResolvedValue([[]]);
     mockCreateChange.mockResolvedValue([{}]);
+    mockRecord.mockReturnValue(fakeRecord);
 
     await upsertDnsRecordGcp('my-project', 'backresto-com', 'jarvis.backresto.com', '1.2.3.4');
 
     expect(mockGetRecords).toHaveBeenCalledWith({ name: 'jarvis.backresto.com.', type: 'A' });
+    expect(mockRecord).toHaveBeenCalledWith('a', { name: 'jarvis.backresto.com.', ttl: 300, data: '1.2.3.4' });
     expect(mockCreateChange).toHaveBeenCalledWith({
-      add: { name: 'jarvis.backresto.com.', type: 'A', ttl: 300, data: ['1.2.3.4'] },
+      add: fakeRecord,
     });
   });
 
   it('replaces existing A record when one exists', async () => {
     const existingRecord = { name: 'jarvis.backresto.com.', type: 'A', ttl: 300, data: ['9.9.9.9'] };
+    const fakeRecord = { name: 'jarvis.backresto.com.', type: 'A', ttl: 300, data: ['1.2.3.4'] };
     mockGetRecords.mockResolvedValue([[existingRecord]]);
     mockCreateChange.mockResolvedValue([{}]);
+    mockRecord.mockReturnValue(fakeRecord);
 
     await upsertDnsRecordGcp('my-project', 'backresto-com', 'jarvis.backresto.com', '1.2.3.4');
 
     expect(mockCreateChange).toHaveBeenCalledWith({
       delete: [existingRecord],
-      add: { name: 'jarvis.backresto.com.', type: 'A', ttl: 300, data: ['1.2.3.4'] },
+      add: fakeRecord,
     });
   });
 });
