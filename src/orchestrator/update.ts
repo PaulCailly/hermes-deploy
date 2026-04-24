@@ -180,40 +180,43 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   if (nixHash === deployment.last_nix_hash) {
     // Nix config unchanged — skip nixos-rebuild. But still sync profiles
     // if any profile files changed (profiles don't affect NixOS config).
-    if (config.hermes.profiles.length > 0) {
-      const storedHashes = deployment.profile_hashes ?? {};
-      const profileHashMap = new Map(
-        config.hermes.profiles.map(p => [p.name, computeProfileHash(deployment.project_path, p)]),
-      );
-      const changedProfiles = config.hermes.profiles.filter(p => profileHashMap.get(p.name) !== storedHashes[p.name]);
+    const storedHashes = deployment.profile_hashes ?? {};
+    const profileHashMap = new Map(
+      config.hermes.profiles.map(p => [p.name, computeProfileHash(deployment.project_path, p)]),
+    );
+    const changedProfiles = config.hermes.profiles.filter(p => profileHashMap.get(p.name) !== storedHashes[p.name]);
 
-      if (changedProfiles.length > 0) {
-        reporter.log(`Uploading ${changedProfiles.length} changed profile(s)...`);
-        const profileSession = await opts.sessionFactory(deployment.instance_ip, readFileSync(deployment.ssh_key_path, 'utf-8'));
-        try {
-          for (const profile of changedProfiles) {
-            reporter.log(`  Profile: ${profile.name}`);
-            await uploadProfileFiles({
-              session: profileSession,
-              projectDir: deployment.project_path,
-              profile,
-              reporter,
-            });
-            await profileSession.exec(
-              `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1 || true`,
-            );
-          }
-          await store.update(state => {
-            const d = state.deployments[opts.deploymentName]!;
-            const hashes: Record<string, string> = {};
-            for (const [name, hash] of profileHashMap) hashes[name] = hash;
-            d.profile_hashes = hashes;
+    if (changedProfiles.length > 0) {
+      reporter.log(`Uploading ${changedProfiles.length} changed profile(s)...`);
+      const profileSession = await opts.sessionFactory(deployment.instance_ip, readFileSync(deployment.ssh_key_path, 'utf-8'));
+      try {
+        for (const profile of changedProfiles) {
+          reporter.log(`  Profile: ${profile.name}`);
+          await uploadProfileFiles({
+            session: profileSession,
+            projectDir: deployment.project_path,
+            profile,
+            reporter,
           });
-        } finally {
-          await profileSession.dispose();
+          const restartResult = await profileSession.exec(
+            `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1`,
+          );
+          if (restartResult.exitCode !== 0) {
+            reporter.log(`  Warning: gateway restart failed for profile "${profile.name}" (exit ${restartResult.exitCode}): ${restartResult.stdout.trim()}`);
+          }
         }
+      } finally {
+        await profileSession.dispose();
       }
     }
+
+    // Always persist profile hashes to prune removed profiles
+    const hashes: Record<string, string> = {};
+    for (const [name, hash] of profileHashMap) hashes[name] = hash;
+    await store.update(state => {
+      state.deployments[opts.deploymentName]!.profile_hashes = hashes;
+    });
+
     reporter.success(`network rules updated — ${opts.deploymentName} config unchanged`);
     return {
       health: deployment.health === 'healthy' ? 'healthy' : 'unhealthy',
@@ -287,9 +290,12 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
             reporter,
           });
           // Restart gateway for this profile if config changed
-          await freshSession.exec(
-            `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1 || true`,
+          const restartResult = await freshSession.exec(
+            `su - hermes -s /bin/sh -c "hermes -p ${profile.name} gateway restart" 2>&1`,
           );
+          if (restartResult.exitCode !== 0) {
+            reporter.log(`  Warning: gateway restart failed for profile "${profile.name}" (exit ${restartResult.exitCode}): ${restartResult.stdout.trim()}`);
+          }
         }
       }
       // Replace profile_hashes entirely (prunes removed profiles)

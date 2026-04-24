@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve as pathResolve } from 'node:path';
+import { basename, resolve as pathResolve } from 'node:path';
 import {
   generateConfigurationNix,
   generateFlakeNix,
@@ -14,6 +14,15 @@ import { HermesTomlError } from '../schema/load.js';
 import type { SshSession } from '../remote-ops/session.js';
 import type { HermesTomlConfig, ProfileConfig } from '../schema/hermes-toml.js';
 import type { Reporter } from './reporter.js';
+
+const HERMES_HOME = '/var/lib/hermes/.hermes';
+
+/** Defense-in-depth: reject document keys that could escape the target dir. */
+function assertSafeFilename(key: string): void {
+  if (key !== basename(key) || key === '..' || key === '.' || key.includes('/')) {
+    throw new Error(`unsafe document key "${key}" — must be a plain filename`);
+  }
+}
 
 /**
  * Pre-flight check that every file referenced from hermes.toml exists
@@ -107,6 +116,7 @@ export async function uploadAndRebuild(args: BootstrapArgs): Promise<{ lockedRev
 
   // Upload each [hermes.documents] entry to /etc/nixos/<filename>
   for (const [filename, relPath] of Object.entries(config.hermes.documents)) {
+    assertSafeFilename(filename);
     const docContent = readFileSync(pathResolve(projectDir, relPath));
     await session.uploadFile('/etc/nixos/' + filename, docContent);
   }
@@ -237,7 +247,7 @@ export async function uploadProfileFiles(args: {
   reporter: Reporter;
 }): Promise<void> {
   const { session, projectDir, profile, reporter } = args;
-  const profileHome = `/var/lib/hermes/.hermes/profiles/${profile.name}`;
+  const profileHome = `${HERMES_HOME}/profiles/${profile.name}`;
 
   // Check if profile exists, create if not
   const checkResult = await session.exec(`test -d ${profileHome} && echo exists || echo missing`);
@@ -256,21 +266,20 @@ export async function uploadProfileFiles(args: {
   await session.uploadFile(`${profileHome}/config.yaml`, configContent);
 
   // Upload encrypted secrets file, then decrypt on-box using sops + age key.
-  // Decrypt to a temp file first so a failed decryption doesn't corrupt .env.
   const secretsPath = pathResolve(projectDir, profile.secrets_file);
   const secretsContent = readFileSync(secretsPath);
   await session.uploadFile(`${profileHome}/secrets.env.enc`, secretsContent);
   const decryptResult = await session.exec(
-    `SOPS_AGE_KEY_FILE=/var/lib/sops-nix/age.key sops -d ${profileHome}/secrets.env.enc > ${profileHome}/.env.tmp 2>&1`,
+    `SOPS_AGE_KEY_FILE=/var/lib/sops-nix/age.key sops -d ${profileHome}/secrets.env.enc`,
   );
   if (decryptResult.exitCode !== 0) {
-    await session.exec(`rm -f ${profileHome}/.env.tmp`);
-    throw new Error(`Failed to decrypt secrets for profile "${profile.name}": ${decryptResult.stdout}`);
+    throw new Error(`Failed to decrypt secrets for profile "${profile.name}": ${decryptResult.stderr}`);
   }
-  await session.exec(`mv ${profileHome}/.env.tmp ${profileHome}/.env`);
+  await session.uploadFile(`${profileHome}/.env`, decryptResult.stdout);
 
   // Upload documents
   for (const [docName, relPath] of Object.entries(profile.documents)) {
+    assertSafeFilename(docName);
     const docContent = readFileSync(pathResolve(projectDir, relPath));
     await session.uploadFile(`${profileHome}/${docName}`, docContent);
   }

@@ -49,6 +49,16 @@ const CachixSchema = z.object({
 // [[hermes.profiles]] — optional named sub-agents running alongside the
 // default agent on the same VM. Each profile is an independent agent
 // instance with its own config, secrets, and documents.
+// Document keys are used as filenames on the remote VM.  Restrict to safe
+// basenames (alphanumeric, hyphens, underscores, dots — no slashes, no "..").
+const SafeFilenameKey = z
+  .string()
+  .min(1)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, {
+    message: 'document key must be a safe filename (no slashes or "..")',
+  })
+  .refine(k => !k.includes('..'), { message: 'document key must not contain ".."' });
+
 const ProfileSchema = z.object({
   name: z
     .string()
@@ -61,7 +71,7 @@ const ProfileSchema = z.object({
     }),
   config_file: z.string().min(1),
   secrets_file: z.string().min(1),
-  documents: z.record(z.string().min(1), z.string().min(1)).default({}),
+  documents: z.record(SafeFilenameKey, z.string().min(1)).default({}),
 });
 
 export type ProfileConfig = z.infer<typeof ProfileSchema>;
@@ -75,7 +85,7 @@ const HermesSchema = z
     config_file: z.string().min(1),
     secrets_file: z.string().min(1),
     nix_extra: z.string().min(1).optional(),
-    documents: z.record(z.string().min(1), z.string().min(1)).default({}),
+    documents: z.record(SafeFilenameKey, z.string().min(1)).default({}),
     environment: z.record(z.string().min(1), z.string()).default({}),
     cachix: CachixSchema.optional(),
     profiles: z.array(ProfileSchema).default([]),

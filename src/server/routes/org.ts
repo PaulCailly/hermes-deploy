@@ -114,7 +114,8 @@ async function discoverProfiles(names: string[]): Promise<Map<string, string[]>>
   const results = await Promise.allSettled(
     names.map(async (name) => {
       const dirs = await listRemoteDir(name, `${HERMES_HOME}/profiles`);
-      return { name, profiles: ['default', ...dirs.filter((d) => /^[a-z0-9][a-z0-9-]{0,62}$/.test(d))] };
+      const named = dirs.filter((d) => d !== 'default' && /^[a-z0-9][a-z0-9-]{0,62}$/.test(d));
+      return { name, profiles: ['default', ...named] };
     }),
   );
   const map = new Map<string, string[]>();
