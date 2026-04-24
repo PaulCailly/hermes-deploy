@@ -9,55 +9,75 @@ import type {
 
 const REFETCH_MS = 15_000;
 
+/** Build query string suffix for profile-scoped API calls. */
+function profileQs(profile?: string, existingParams?: string): string {
+  if (!profile || profile === 'default') return existingParams ? `?${existingParams}` : '';
+  const sep = existingParams ? `${existingParams}&` : '';
+  return `?${sep}profile=${encodeURIComponent(profile)}`;
+}
+
+// ---------- Profile hook ----------
+
+export function useAgentProfiles(name: string) {
+  return useQuery({
+    queryKey: ['agent-profiles', name],
+    queryFn: () => apiFetch<{ name: string; path: string }[]>(`/api/agents/${encodeURIComponent(name)}/profiles`),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 // ---------- Per-agent hooks ----------
 
-export function useAgentStats(name: string) {
+export function useAgentStats(name: string, profile?: string) {
   return useQuery({
-    queryKey: ['agent-stats', name],
-    queryFn: () => apiFetch<AgentStats>(`/api/agents/${encodeURIComponent(name)}/stats`),
+    queryKey: ['agent-stats', name, profile ?? 'default'],
+    queryFn: () => apiFetch<AgentStats>(`/api/agents/${encodeURIComponent(name)}/stats${profileQs(profile)}`),
     refetchInterval: REFETCH_MS,
     retry: false,
   });
 }
 
-export function useAgentSessions(name: string, opts?: { platform?: string; limit?: number; q?: string }) {
+export function useAgentSessions(name: string, opts?: { platform?: string; limit?: number; q?: string; profile?: string }) {
   const params = new URLSearchParams();
   if (opts?.limit) params.set('limit', String(opts.limit));
   if (opts?.platform && opts.platform !== 'all') params.set('platform', opts.platform);
   if (opts?.q) params.set('q', opts.q);
+  if (opts?.profile && opts.profile !== 'default') params.set('profile', opts.profile);
   const qs = params.toString() ? `?${params.toString()}` : '';
 
   return useQuery({
-    queryKey: ['agent-sessions', name, opts?.platform ?? 'all', opts?.limit ?? 50, opts?.q ?? ''],
+    queryKey: ['agent-sessions', name, opts?.platform ?? 'all', opts?.limit ?? 50, opts?.q ?? '', opts?.profile ?? 'default'],
     queryFn: () => apiFetch<AgentSession[]>(`/api/agents/${encodeURIComponent(name)}/sessions${qs}`),
     refetchInterval: REFETCH_MS,
     retry: false,
   });
 }
 
-export function useAgentMessages(name: string, sessionId: string | null | undefined) {
+export function useAgentMessages(name: string, sessionId: string | null | undefined, profile?: string) {
   return useQuery({
-    queryKey: ['agent-messages', name, sessionId],
-    queryFn: () => apiFetch<AgentMessage[]>(`/api/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId!)}/messages`),
+    queryKey: ['agent-messages', name, sessionId, profile ?? 'default'],
+    queryFn: () => apiFetch<AgentMessage[]>(`/api/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId!)}/messages${profileQs(profile)}`),
     refetchInterval: REFETCH_MS,
     enabled: Boolean(sessionId),
     retry: false,
   });
 }
 
-export function useAgentSkills(name: string) {
+export function useAgentSkills(name: string, profile?: string) {
   return useQuery({
-    queryKey: ['agent-skills', name],
-    queryFn: () => apiFetch<AgentSkillCategory[]>(`/api/agents/${encodeURIComponent(name)}/skills`),
+    queryKey: ['agent-skills', name, profile ?? 'default'],
+    queryFn: () => apiFetch<AgentSkillCategory[]>(`/api/agents/${encodeURIComponent(name)}/skills${profileQs(profile)}`),
     retry: false,
   });
 }
 
-export function useAgentSkillFile(name: string, category: string, skill: string, file: string) {
+export function useAgentSkillFile(name: string, category: string, skill: string, file: string, profile?: string) {
   return useQuery({
-    queryKey: ['agent-skill-file', name, category, skill, file],
+    queryKey: ['agent-skill-file', name, category, skill, file, profile ?? 'default'],
     queryFn: async () => {
-      const res = await fetch(`/api/agents/${encodeURIComponent(name)}/skills/${encodeURIComponent(category)}/${encodeURIComponent(skill)}/${encodeURIComponent(file)}`, {
+      const qs = profile && profile !== 'default' ? `?profile=${encodeURIComponent(profile)}` : '';
+      const res = await fetch(`/api/agents/${encodeURIComponent(name)}/skills/${encodeURIComponent(category)}/${encodeURIComponent(skill)}/${encodeURIComponent(file)}${qs}`, {
         headers: getAuthHeader(),
       });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -68,37 +88,37 @@ export function useAgentSkillFile(name: string, category: string, skill: string,
   });
 }
 
-export function useAgentCron(name: string) {
+export function useAgentCron(name: string, profile?: string) {
   return useQuery({
-    queryKey: ['agent-cron', name],
-    queryFn: () => apiFetch<AgentCronJob[]>(`/api/agents/${encodeURIComponent(name)}/cron`),
+    queryKey: ['agent-cron', name, profile ?? 'default'],
+    queryFn: () => apiFetch<AgentCronJob[]>(`/api/agents/${encodeURIComponent(name)}/cron${profileQs(profile)}`),
     refetchInterval: REFETCH_MS,
     retry: false,
   });
 }
 
-export function useAgentGateway(name: string) {
+export function useAgentGateway(name: string, profile?: string) {
   return useQuery({
-    queryKey: ['agent-gateway', name],
-    queryFn: () => apiFetch<AgentGatewayState>(`/api/agents/${encodeURIComponent(name)}/gateway`),
+    queryKey: ['agent-gateway', name, profile ?? 'default'],
+    queryFn: () => apiFetch<AgentGatewayState>(`/api/agents/${encodeURIComponent(name)}/gateway${profileQs(profile)}`),
     refetchInterval: REFETCH_MS,
     retry: false,
   });
 }
 
-export function useAgentWebhooks(name: string) {
+export function useAgentWebhooks(name: string, profile?: string) {
   return useQuery({
-    queryKey: ['agent-webhooks', name],
-    queryFn: () => apiFetch<AgentWebhooksState>(`/api/agents/${encodeURIComponent(name)}/webhooks`),
+    queryKey: ['agent-webhooks', name, profile ?? 'default'],
+    queryFn: () => apiFetch<AgentWebhooksState>(`/api/agents/${encodeURIComponent(name)}/webhooks${profileQs(profile)}`),
     refetchInterval: REFETCH_MS,
     retry: false,
   });
 }
 
-export function useAgentPlugins(name: string) {
+export function useAgentPlugins(name: string, profile?: string) {
   return useQuery({
-    queryKey: ['agent-plugins', name],
-    queryFn: () => apiFetch<AgentPlugin[]>(`/api/agents/${encodeURIComponent(name)}/plugins`),
+    queryKey: ['agent-plugins', name, profile ?? 'default'],
+    queryFn: () => apiFetch<AgentPlugin[]>(`/api/agents/${encodeURIComponent(name)}/plugins${profileQs(profile)}`),
     refetchInterval: 30_000,
     retry: false,
   });
@@ -106,12 +126,12 @@ export function useAgentPlugins(name: string) {
 
 // ---------- Mutations ----------
 
-export function useGatewayAction(name: string) {
+export function useGatewayAction(name: string, profile?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (action: 'start' | 'stop' | 'restart') =>
       apiFetch<{ ok: boolean; output: string }>(
-        `/api/agents/${encodeURIComponent(name)}/gateway/${action}`,
+        `/api/agents/${encodeURIComponent(name)}/gateway/${action}${profileQs(profile)}`,
         { method: 'POST' },
       ),
     onSuccess: () => {
@@ -120,12 +140,12 @@ export function useGatewayAction(name: string) {
   });
 }
 
-export function useCronToggle(name: string) {
+export function useCronToggle(name: string, profile?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (jobId: string) =>
       apiFetch<{ ok: boolean; enabled: boolean }>(
-        `/api/agents/${encodeURIComponent(name)}/cron/${encodeURIComponent(jobId)}/toggle`,
+        `/api/agents/${encodeURIComponent(name)}/cron/${encodeURIComponent(jobId)}/toggle${profileQs(profile)}`,
         { method: 'PATCH' },
       ),
     onSuccess: () => {
@@ -144,12 +164,12 @@ export interface CronJobInput {
   skills?: string[];
 }
 
-export function useCronCreate(name: string) {
+export function useCronCreate(name: string, profile?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CronJobInput) =>
       apiFetch<{ ok: boolean; id: string }>(
-        `/api/agents/${encodeURIComponent(name)}/cron`,
+        `/api/agents/${encodeURIComponent(name)}/cron${profileQs(profile)}`,
         { method: 'POST', body: JSON.stringify(input) },
       ),
     onSuccess: () => {
@@ -159,12 +179,12 @@ export function useCronCreate(name: string) {
   });
 }
 
-export function useCronUpdate(name: string) {
+export function useCronUpdate(name: string, profile?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ jobId, input }: { jobId: string; input: CronJobInput }) =>
       apiFetch<{ ok: boolean }>(
-        `/api/agents/${encodeURIComponent(name)}/cron/${encodeURIComponent(jobId)}`,
+        `/api/agents/${encodeURIComponent(name)}/cron/${encodeURIComponent(jobId)}${profileQs(profile)}`,
         { method: 'PUT', body: JSON.stringify(input) },
       ),
     onSuccess: () => {
@@ -174,12 +194,12 @@ export function useCronUpdate(name: string) {
   });
 }
 
-export function useCronDelete(name: string) {
+export function useCronDelete(name: string, profile?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (jobId: string) =>
       apiFetch<{ ok: boolean }>(
-        `/api/agents/${encodeURIComponent(name)}/cron/${encodeURIComponent(jobId)}`,
+        `/api/agents/${encodeURIComponent(name)}/cron/${encodeURIComponent(jobId)}${profileQs(profile)}`,
         { method: 'DELETE' },
       ),
     onSuccess: () => {
@@ -190,13 +210,14 @@ export function useCronDelete(name: string) {
 }
 
 // Skill file write
-export function useSkillFileWrite(name: string) {
+export function useSkillFileWrite(name: string, profile?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ category, skill, file, content }: { category: string; skill: string; file: string; content: string }) => {
       const token = sessionStorage.getItem('hermes-deploy-token');
+      const qs = profile && profile !== 'default' ? `?profile=${encodeURIComponent(profile)}` : '';
       const res = await fetch(
-        `/api/agents/${encodeURIComponent(name)}/skills/${encodeURIComponent(category)}/${encodeURIComponent(skill)}/${encodeURIComponent(file)}`,
+        `/api/agents/${encodeURIComponent(name)}/skills/${encodeURIComponent(category)}/${encodeURIComponent(skill)}/${encodeURIComponent(file)}${qs}`,
         {
           method: 'PUT',
           headers: {
@@ -231,6 +252,7 @@ export interface OrgStats {
   activeSessions: number;
   perAgent: Array<{
     name: string;
+    profile: string;
     totalSessions: number;
     totalCostUSD: number;
     activeSessions: number;
@@ -241,6 +263,7 @@ export interface OrgStats {
 export interface OrgActivityItem {
   id: string;
   agent: string;
+  profile: string;
   title: string;
   source: string;
   startedAt: string;
@@ -316,6 +339,7 @@ export function useLiveAgentMessages(
   name: string,
   sessionId: string | null | undefined,
   enabled: boolean,
+  profile?: string,
 ): { messages: AgentMessage[]; connected: boolean } {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [connected, setConnected] = useState(false);
@@ -334,7 +358,8 @@ export function useLiveAgentMessages(
 
     const connect = () => {
       if (cancelled) return;
-      const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}/messages`);
+      const qs = profile && profile !== 'default' ? `?profile=${encodeURIComponent(profile)}` : '';
+      const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}/messages${qs}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -378,7 +403,7 @@ export function useLiveAgentMessages(
         try { ws.close(); } catch { /* ignore */ }
       }
     };
-  }, [name, sessionId, enabled]);
+  }, [name, sessionId, enabled, profile]);
 
   return { messages, connected };
 }
@@ -387,7 +412,7 @@ export function useLiveAgentMessages(
  * Subscribe to live stats updates via WebSocket. Provides near-real-time
  * deltas when new sessions/messages are written.
  */
-export function useLiveAgentStats(name: string, enabled: boolean): {
+export function useLiveAgentStats(name: string, enabled: boolean, profile?: string): {
   data: Partial<AgentStats> | undefined;
   connected: boolean;
 } {
@@ -407,7 +432,8 @@ export function useLiveAgentStats(name: string, enabled: boolean): {
 
     const connect = () => {
       if (cancelled) return;
-      const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/stats`);
+      const qs = profile && profile !== 'default' ? `?profile=${encodeURIComponent(profile)}` : '';
+      const ws = createWs(`/ws/agents/${encodeURIComponent(name)}/stats${qs}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -457,7 +483,7 @@ export function useLiveAgentStats(name: string, enabled: boolean): {
         try { ws.close(); } catch { /* ignore */ }
       }
     };
-  }, [name, enabled]);
+  }, [name, enabled, profile]);
 
   return { data, connected };
 }
