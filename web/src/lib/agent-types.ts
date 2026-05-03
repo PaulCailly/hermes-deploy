@@ -138,3 +138,47 @@ export interface AgentPlugin {
   error: string | null;
   files: Record<string, string>;
 }
+
+export interface CuratorRun {
+  timestamp: string;
+  skillsGraded: number;
+  skillsPruned: number;
+  skillsConsolidated: number;
+  duration_s: number;
+}
+
+export interface SkillHealthEntry {
+  name: string;
+  usageCount: number;
+  lastUsed: string | null;
+  grade: string | null;
+  status: 'active' | 'archived' | 'consolidated';
+}
+
+export interface CuratorResponse {
+  enabled: boolean;
+  lastRun: string | null;
+  nextRun: string | null;
+  runs: CuratorRun[];
+  report: string | null;
+  skillHealth: SkillHealthEntry[];
+}
+
+export interface ModelStats {
+  model: string;
+  totalSessions: number;
+  totalTokensIn: number;
+  totalTokensOut: number;
+  totalCostUSD: number;
+  avgLatencyMs: number | null;
+  lastUsed: string | null;
+}
+
+export interface ModelsResponse {
+  config: {
+    default: string;
+    provider: string;
+    auxiliary: Record<string, { model?: string; provider?: string }>;
+  };
+  stats: ModelStats[];
+}
