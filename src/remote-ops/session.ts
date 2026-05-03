@@ -193,8 +193,8 @@ export async function createSshSession(
       client.sftp((err: Error | undefined, sftp) => {
         if (err) return reject(err);
         const stream = sftp.createWriteStream(remotePath, { mode });
-        stream.on('error', reject);
-        stream.on('close', () => resolve());
+        stream.on('error', (e: Error) => { sftp.end(); reject(e); });
+        stream.on('close', () => { sftp.end(); resolve(); });
         stream.end(typeof contents === 'string' ? Buffer.from(contents) : contents);
       });
     });
