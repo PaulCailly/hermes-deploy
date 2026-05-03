@@ -1038,6 +1038,152 @@ except Exception as e:
       });
     },
   );
+
+  // ---------- GET /api/agents/:name/curator ----------
+  app.get<{ Params: { name: string }; Querystring: { profile?: string } }>('/api/agents/:name/curator', async (req, reply) => {
+    const { name } = req.params;
+    if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
+
+    // Read curator config from the agent's config.yaml
+    const configPath = home === HERMES_HOME ? '/etc/nixos/config.yaml' : `${home}/config.yaml`;
+    const configYaml = await readRemoteFile(name, configPath);
+    const curatorEnabled = configYaml ? /curator:[\s\S]*?enabled:\s*true/.test(configYaml) : false;
+
+    // Read curator run history
+    const runsRaw = await readRemoteJson<unknown[]>(name, `${home}/logs/curator/run.json`);
+    const runs = Array.isArray(runsRaw)
+      ? runsRaw.map((r: any) => ({
+          timestamp: String((r as Record<string, unknown>).timestamp ?? ''),
+          skillsGraded: Number((r as Record<string, unknown>).skills_graded ?? (r as Record<string, unknown>).skillsGraded ?? 0),
+          skillsPruned: Number((r as Record<string, unknown>).skills_pruned ?? (r as Record<string, unknown>).skillsPruned ?? 0),
+          skillsConsolidated: Number((r as Record<string, unknown>).skills_consolidated ?? (r as Record<string, unknown>).skillsConsolidated ?? 0),
+          duration_s: Number((r as Record<string, unknown>).duration_s ?? (r as Record<string, unknown>).duration ?? 0),
+        }))
+      : [];
+
+    // Read latest curator report
+    const report = await readRemoteFile(name, `${home}/logs/curator/REPORT.md`);
+
+    // Read skill health from curator status output
+    const healthRaw = await readRemoteJson<unknown[]>(name, `${home}/logs/curator/skill_health.json`);
+    const skillHealth = Array.isArray(healthRaw)
+      ? healthRaw.map((s: any) => ({
+          name: String((s as Record<string, unknown>).name ?? ''),
+          usageCount: Number((s as Record<string, unknown>).usage_count ?? (s as Record<string, unknown>).usageCount ?? 0),
+          lastUsed: ((s as Record<string, unknown>).last_used ?? (s as Record<string, unknown>).lastUsed ?? null) as string | null,
+          grade: ((s as Record<string, unknown>).grade ?? null) as string | null,
+          status: String((s as Record<string, unknown>).status ?? 'active'),
+        }))
+      : [];
+
+    // Compute lastRun / nextRun from run history
+    const lastRun = runs.length > 0 ? runs[runs.length - 1]!.timestamp : null;
+    let nextRun: string | null = null;
+    if (lastRun && curatorEnabled) {
+      const cycleDaysMatch = configYaml?.match(/cycle_days:\s*(\d+)/);
+      const cycleDays = cycleDaysMatch ? Number(cycleDaysMatch[1]) : 7;
+      const next = new Date(new Date(lastRun).getTime() + cycleDays * 86_400_000);
+      nextRun = next.toISOString();
+    }
+
+    return {
+      enabled: curatorEnabled,
+      lastRun,
+      nextRun,
+      runs,
+      report,
+      skillHealth,
+    };
+  });
+
+  // ---------- GET /api/agents/:name/models ----------
+  app.get<{ Params: { name: string }; Querystring: { profile?: string } }>('/api/agents/:name/models', async (req, reply) => {
+    const { name } = req.params;
+    if (!(await agentExists(name))) return reply.code(404).send({ error: 'agent not found' });
+    const home = profileHome(req.query);
+
+    // Read model config from the agent's config.yaml
+    const configPath = home === HERMES_HOME ? '/etc/nixos/config.yaml' : `${home}/config.yaml`;
+    const configYaml = await readRemoteFile(name, configPath);
+
+    let configDefault = '';
+    let configProvider = '';
+    const configAuxiliary: Record<string, { model?: string; provider?: string }> = {};
+
+    if (configYaml) {
+      const defaultMatch = configYaml.match(/model:\s*\n\s+default:\s*(\S+)/);
+      configDefault = defaultMatch?.[1] ?? '';
+      const providerMatch = configYaml.match(/model:\s*\n(?:\s+\w+:.*\n)*?\s+provider:\s*(\S+)/);
+      configProvider = providerMatch?.[1] ?? '';
+
+      // Parse auxiliary section for model names
+      const auxBlock = configYaml.match(/auxiliary:\s*\n((?:\s+\w[\s\S]*?)?)(?=\n\w|\n$|$)/);
+      if (auxBlock?.[1]) {
+        const auxLines = auxBlock[1].split('\n');
+        let currentKey = '';
+        for (const line of auxLines) {
+          const keyMatch = line.match(/^\s{2}(\w+):\s*$/);
+          if (keyMatch) {
+            currentKey = keyMatch[1]!;
+            configAuxiliary[currentKey] = {};
+            continue;
+          }
+          if (currentKey) {
+            const modelMatch = line.match(/^\s{4}model:\s*'?([^'\s]+)'?\s*$/);
+            if (modelMatch && modelMatch[1]) configAuxiliary[currentKey]!.model = modelMatch[1];
+            const provMatch = line.match(/^\s{4}provider:\s*'?([^'\s]+)'?\s*$/);
+            if (provMatch && provMatch[1]) configAuxiliary[currentKey]!.provider = provMatch[1];
+          }
+        }
+      }
+    }
+
+    // Query per-model stats from state.db
+    const stats = await runSqliteJson<{
+      model: string | null;
+      total_sessions: number;
+      total_input_tokens: number;
+      total_output_tokens: number;
+      total_cost_usd: number;
+      avg_latency_ms: number | null;
+      last_used: string;
+    }>(
+      name,
+      `SELECT
+        model,
+        COUNT(*) as total_sessions,
+        COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+        COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+        COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) as total_cost_usd,
+        NULL as avg_latency_ms,
+        MAX(started_at) as last_used
+      FROM sessions
+      WHERE model IS NOT NULL AND model != ''
+      GROUP BY model
+      ORDER BY total_sessions DESC`,
+      home,
+    );
+
+    const fallbackModel = configDefault || await getConfiguredModel(name, configPath);
+
+    return {
+      config: {
+        default: configDefault,
+        provider: configProvider,
+        auxiliary: configAuxiliary,
+      },
+      stats: stats.map((s) => ({
+        model: s.model || fallbackModel,
+        totalSessions: Number(s.total_sessions),
+        totalTokensIn: Number(s.total_input_tokens),
+        totalTokensOut: Number(s.total_output_tokens),
+        totalCostUSD: Number(s.total_cost_usd),
+        avgLatencyMs: s.avg_latency_ms != null ? Number(s.avg_latency_ms) : null,
+        lastUsed: s.last_used ?? null,
+      })),
+    };
+  });
 }
 
 function genCronId(): string {
