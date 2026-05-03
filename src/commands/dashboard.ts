@@ -1,8 +1,11 @@
+import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { createDashboardServer } from '../server/index.js';
 import { openBrowser } from '../server/open-browser.js';
 import { checkCliUpdate } from '../updates/cli-update-check.js';
 import { getStatePaths } from '../state/paths.js';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 declare const HERMES_DEPLOY_VERSION: string;
 
@@ -13,7 +16,27 @@ export interface DashboardOptions {
   auth?: boolean;
 }
 
+function ensureWebBuilt(): void {
+  const distDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'web');
+  if (existsSync(join(distDir, 'index.html'))) return;
+
+  const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const webDir = join(projectRoot, 'web');
+  if (!existsSync(join(webDir, 'package.json'))) return; // installed via npm, no source
+
+  console.log('Web dashboard not built — building now...');
+  try {
+    execSync('npm run build:web && npm run build:copy-web', {
+      cwd: projectRoot,
+      stdio: 'inherit',
+    });
+  } catch {
+    console.error('Failed to auto-build dashboard. Run manually: npm run build');
+  }
+}
+
 export async function dashboardCommand(opts: DashboardOptions): Promise<void> {
+  ensureWebBuilt();
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? 0;
   const auth = opts.auth !== false;
