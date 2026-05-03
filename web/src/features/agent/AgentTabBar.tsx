@@ -9,6 +9,8 @@ const operationTabs: { id: AgentTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'sessions', label: 'Sessions' },
   { id: 'analytics', label: 'Analytics' },
+  { id: 'models', label: 'Models' },
+  { id: 'curator', label: 'Curator' },
   { id: 'skills', label: 'Skills' },
   { id: 'cron', label: 'Cron' },
   { id: 'gateway', label: 'Gateway' },

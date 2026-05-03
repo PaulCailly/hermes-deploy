@@ -11,6 +11,8 @@ import { CronTab } from './CronTab';
 import { GatewayTab } from './GatewayTab';
 import { WebhooksTab } from './WebhooksTab';
 import { PluginsTab } from './PluginsTab';
+import { CuratorTab } from './CuratorTab';
+import { ModelsTab } from './ModelsTab';
 import { InfraTab } from './InfraTab';
 import { AgentUpdateBanner } from './AgentUpdateBanner';
 import { ConfigTab } from '../config/ConfigTab';
@@ -49,6 +51,8 @@ export function AgentWorkspace({ name, tab, profile, navigate }: AgentWorkspaceP
       case 'overview':  return <OverviewTab name={name} profile={activeProfile} status={status} navigate={navigate} />;
       case 'sessions':  return <SessionsTab name={name} profile={activeProfile} />;
       case 'analytics': return <AnalyticsTab name={name} profile={activeProfile} />;
+      case 'models':    return <ModelsTab name={name} profile={activeProfile} />;
+      case 'curator':   return <CuratorTab name={name} profile={activeProfile} />;
       case 'skills':    return <SkillsTab name={name} profile={activeProfile} />;
       case 'cron':      return <CronTab name={name} profile={activeProfile} />;
       case 'gateway':   return <GatewayTab name={name} profile={activeProfile} />;
