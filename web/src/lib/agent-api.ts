@@ -5,6 +5,7 @@ import { createWs } from './ws';
 import type {
   AgentStats, AgentSession, AgentMessage, AgentSkillCategory,
   AgentCronJob, AgentGatewayState, AgentWebhooksState, AgentPlugin,
+  CuratorResponse, ModelsResponse,
 } from './agent-types';
 
 const REFETCH_MS = 15_000;
@@ -118,6 +119,24 @@ export function useAgentPlugins(name: string, profile?: string) {
   return useQuery({
     queryKey: ['agent-plugins', name, profile ?? 'default'],
     queryFn: () => apiFetch<AgentPlugin[]>(`/api/agents/${encodeURIComponent(name)}/plugins${profileQs(profile)}`),
+    refetchInterval: 30_000,
+    retry: false,
+  });
+}
+
+export function useCurator(name: string, profile?: string) {
+  return useQuery({
+    queryKey: ['agent-curator', name, profile ?? 'default'],
+    queryFn: () => apiFetch<CuratorResponse>(`/api/agents/${encodeURIComponent(name)}/curator${profileQs(profile)}`),
+    refetchInterval: 30_000,
+    retry: false,
+  });
+}
+
+export function useModels(name: string, profile?: string) {
+  return useQuery({
+    queryKey: ['agent-models', name, profile ?? 'default'],
+    queryFn: () => apiFetch<ModelsResponse>(`/api/agents/${encodeURIComponent(name)}/models${profileQs(profile)}`),
     refetchInterval: 30_000,
     retry: false,
   });
