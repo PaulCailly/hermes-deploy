@@ -76,6 +76,36 @@ const ProfileSchema = z.object({
 
 export type ProfileConfig = z.infer<typeof ProfileSchema>;
 
+// [[hermes.cron]] — declarative scheduled jobs (cron-as-code). Each entry
+// is reconciled onto the box's hermes-agent cron scheduler on deploy:
+// hermes-deploy creates jobs that are new, edits ones whose declarative
+// fields drift, and DELETES box jobs that are no longer declared here.
+// The config is authoritative — a cron removed from this file is removed
+// from the box. `name` is the reconciliation key (stable, unique).
+const CronSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, {
+      message: 'cron.name must be a safe identifier (alphanumeric, ".", "_", "-")',
+    }),
+  // A cron expression ("45 5 * * 1-5") or the agent's shorthand ("30m",
+  // "every 2h"). Passed through to `hermes cron` verbatim; not parsed here.
+  schedule: z.string().min(1),
+  prompt: z.string().min(1).optional(),
+  // Skills to attach (assembled into the run context by the agent).
+  skills: z.array(z.string().min(1)).default([]),
+  // Delivery target: "origin" | "local" | "telegram" | "discord" |
+  // "signal" | "platform:chat_id" (e.g. "discord:1040693401420570704").
+  deliver: z.string().min(1).optional(),
+  enabled: z.boolean().default(true),
+  repeat: z.number().int().positive().optional(),
+  script: z.string().min(1).optional(),
+  workdir: z.string().min(1).optional(),
+});
+
+export type CronConfig = z.infer<typeof CronSchema>;
+
 // [hermes] — pure infrastructure pointers + escape hatch.
 // hermes-deploy intentionally does NOT model the agent's config.yaml
 // schema. The user provides config.yaml directly; we upload it and
@@ -89,6 +119,11 @@ const HermesSchema = z
     environment: z.record(z.string().min(1), z.string()).default({}),
     cachix: CachixSchema.optional(),
     profiles: z.array(ProfileSchema).default([]),
+    // Optional (NOT defaulted): absence means "hermes-deploy does not manage
+    // this box's crons" (runtime-created jobs are left alone). Declaring the
+    // section — even as an empty array — opts into authoritative management,
+    // where an empty array deletes every job on the box.
+    cron: z.array(CronSchema).optional(),
   })
   .refine(
     h => {
@@ -96,6 +131,13 @@ const HermesSchema = z
       return new Set(names).size === names.length;
     },
     { message: 'Duplicate profile names are not allowed', path: ['profiles'] },
+  )
+  .refine(
+    h => {
+      const names = (h.cron ?? []).map(c => c.name);
+      return new Set(names).size === names.length;
+    },
+    { message: 'Duplicate cron names are not allowed', path: ['cron'] },
   );
 
 const DomainSchema = z.object({

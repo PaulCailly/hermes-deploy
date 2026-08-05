@@ -6,7 +6,8 @@ export type PhaseId =
   | 'wait-ssh'
   | 'bootstrap'
   | 'flake-update'
-  | 'healthcheck';
+  | 'healthcheck'
+  | 'cron';
 
 export interface Reporter {
   phaseStart(id: PhaseId, label: string): void;

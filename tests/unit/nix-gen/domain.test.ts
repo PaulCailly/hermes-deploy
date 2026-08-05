@@ -13,6 +13,7 @@ function baseConfig(domain?: { name: string; upstream_port: number }): HermesTom
       documents: {},
       environment: {},
       profiles: [],
+      cron: [],
     },
     domain,
   };

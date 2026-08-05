@@ -6,6 +6,8 @@ import { getStatePaths } from '../state/paths.js';
 import { computeConfigHash } from '../state/hash.js';
 import { createPlainReporter, type Reporter } from './reporter.js';
 import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles, uploadProfileFiles, computeProfileHash } from './shared.js';
+import { computeCronHash } from './cron-diff.js';
+import { reconcileCrons } from '../remote-ops/cron.js';
 import type { CloudProvider, NetworkRules, ResourceLedger } from '../cloud/core.js';
 import type { SshSession } from '../remote-ops/session.js';
 
@@ -149,6 +151,31 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
       d.dns_record_id = undefined;
     });
     reporter.phaseDone('dns');
+  }
+
+  // === Cron reconciliation (declarative [[hermes.cron]]) ===
+  // Only when the section is declared (absent = don't manage crons, so a
+  // deploy never wipes runtime-created jobs). Runs BEFORE the nix short-
+  // circuit so a cron-only edit still applies. Gated by a content hash so
+  // unchanged crons cost no SSH; reconcileCrons is itself a no-op (no
+  // gateway restart) when the box already matches.
+  const declaredCrons = config.hermes.cron;
+  const cronHash = declaredCrons ? computeCronHash(declaredCrons) : undefined;
+  if (declaredCrons && cronHash !== (deployment.last_cron_hash ?? 'sha256:none')) {
+    reporter.phaseStart('cron', 'Reconciling scheduled jobs');
+    const cronSession = await opts.sessionFactory(
+      deployment.instance_ip,
+      readFileSync(deployment.ssh_key_path, 'utf-8'),
+    );
+    try {
+      await reconcileCrons({ session: cronSession, declared: declaredCrons, reporter });
+    } finally {
+      try { await cronSession.dispose(); } catch {}
+    }
+    await store.update(s => {
+      s.deployments[opts.deploymentName]!.last_cron_hash = cronHash;
+    });
+    reporter.phaseDone('cron');
   }
 
   // === Network-only optimization ===

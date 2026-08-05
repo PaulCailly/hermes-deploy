@@ -12,6 +12,7 @@ const PHASE_LABELS: Record<PhaseId, string> = {
   bootstrap: 'Uploading config and running nixos-rebuild',
   healthcheck: 'Waiting for hermes-agent.service',
   'flake-update': 'Updating hermes-agent flake input',
+  cron: 'Reconciling scheduled jobs',
 };
 
 const ORDERED_PHASE_IDS: PhaseId[] = [

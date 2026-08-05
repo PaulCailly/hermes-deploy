@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 export const PhaseIdSchema = z.enum([
   'validate', 'ensure-keys', 'provision', 'dns',
-  'wait-ssh', 'bootstrap', 'flake-update', 'healthcheck',
+  'wait-ssh', 'bootstrap', 'flake-update', 'healthcheck', 'cron',
 ]);
 export type PhaseIdDto = z.infer<typeof PhaseIdSchema>;
 

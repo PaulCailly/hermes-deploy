@@ -58,6 +58,43 @@ RUST_BACKTRACE = "1"
 
 The default is `{}`.
 
+## `[[hermes.cron]]` (optional) — cron-as-code
+
+An array of declarative scheduled jobs, reconciled onto the box's hermes-agent
+cron scheduler on every `up`/`update`. The config is **authoritative**: on each
+deploy hermes-deploy creates jobs that are new, edits ones whose declarative
+fields drift, and **deletes jobs on the box that are no longer declared here**.
+`name` is the reconciliation key.
+
+```toml
+[[hermes.cron]]
+name     = "notion-triage"
+schedule = "0 6 * * 1-5"          # cron expr, or a shorthand like "30m" / "every 2h"
+prompt   = "Run one notion-triage pass and post the board digest."
+skills   = ["release-manager"]     # optional; attached to the run
+deliver  = "discord:1040693401420570704"  # origin|local|telegram|discord|signal|platform:chat_id
+enabled  = true                    # optional, default true (false = created but paused)
+```
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes | — | Stable, unique reconciliation key. Safe identifier (alnum, `.`, `_`, `-`). |
+| `schedule` | string | yes | — | Cron expression or the agent's shorthand. Passed through verbatim. |
+| `prompt` | string | no | — | The task/prompt run on each fire. |
+| `skills` | string[] | no | `[]` | Skills to attach to the run. |
+| `deliver` | string | no | — | Delivery target for the job's output. |
+| `enabled` | bool | no | `true` | `false` creates the job paused. |
+| `repeat` | int | no | — | Optional repeat count. |
+| `script` | string | no | — | Path to a script whose stdout is injected into the prompt. |
+| `workdir` | string | no | — | Absolute dir to run from (injects AGENTS.md/CLAUDE.md, sets cwd). |
+
+**Opt-in semantics.** Omitting the `[[hermes.cron]]` section entirely means
+hermes-deploy does **not** manage the box's crons — runtime-created jobs are left
+untouched. Declaring the section (even as no entries) opts into authoritative
+management; to declare "zero crons" (delete every job on the box) use an empty
+array via `cron = []` under `[hermes]`. Reconciliation restarts hermes-agent only
+when something actually changed.
+
 ## `[hermes.cachix]` (optional)
 
 | Field | Type | Required | Default | Description |

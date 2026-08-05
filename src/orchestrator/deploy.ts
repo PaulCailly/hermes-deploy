@@ -7,6 +7,8 @@ import type { CloudProvider, ProvisionSpec, ResourceLedger } from '../cloud/core
 import type { SshSession } from '../remote-ops/session.js';
 import { createPlainReporter, type Reporter } from './reporter.js';
 import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles, uploadProfileFiles, computeProfileHash } from './shared.js';
+import { computeCronHash } from './cron-diff.js';
+import { reconcileCrons } from '../remote-ops/cron.js';
 
 export interface DeployOptions {
   projectDir: string;
@@ -267,6 +269,19 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployResult> {
           d.profile_hashes[profile.name] = computeProfileHash(opts.projectDir, profile);
         });
       }
+    }
+
+    // === Phase 5.6 — reconcile declarative crons ([[hermes.cron]]) ===
+    // Only when the section is declared (absent = leave the box's crons alone).
+    if (config.hermes.cron !== undefined) {
+      if (config.hermes.cron.length > 0) {
+        reporter.phaseStart('cron', 'Reconciling scheduled jobs');
+        await reconcileCrons({ session, declared: config.hermes.cron, reporter });
+        reporter.phaseDone('cron');
+      }
+      await store.update(state => {
+        state.deployments[config.name]!.last_cron_hash = computeCronHash(config.hermes.cron!);
+      });
     }
 
     reporter.success(`hermes-agent is running at ${instance.publicIp}`);
