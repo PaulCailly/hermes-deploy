@@ -67,10 +67,28 @@ describe('diffCrons', () => {
     expect(plan.removes.map(r => r.name)).toEqual(['gone']);
   });
 
-  it('treats skills order-independently', () => {
+  it('detects skill reordering (hermes loads skills in order)', () => {
     const d = declared({ name: 'x', skills: ['a', 'b'] });
     const b = boxCron({ id: 'i', name: 'x', skills: ['b', 'a'] });
-    expect(cronFieldsChanged(d, b)).toEqual([]);
+    expect(cronFieldsChanged(d, b)).toEqual(['skills']);
+  });
+
+  it('detects repeat / script / workdir drift', () => {
+    const d = declared({ name: 'x', repeat: 3, script: '/s.py', workdir: '/w' });
+    const b = boxCron({ id: 'i', name: 'x' });
+    expect(cronFieldsChanged(d, b).sort()).toEqual(['repeat', 'script', 'workdir']);
+  });
+
+  it('removes duplicate box jobs sharing a declared name, reconciling the first', () => {
+    const d = [declared({ name: 'dup', prompt: 'p' })];
+    const box = [
+      boxCron({ id: 'first', name: 'dup', prompt: 'p' }),
+      boxCron({ id: 'second', name: 'dup', prompt: 'p' }),
+    ];
+    const plan = diffCrons(d, box);
+    expect(plan.creates).toEqual([]);
+    expect(plan.edits).toEqual([]); // first matches exactly, no edit
+    expect(plan.removes).toEqual([{ id: 'second', name: 'dup' }]); // extra removed
   });
 
   it('detects enabled drift (pause/resume)', () => {

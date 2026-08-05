@@ -89,9 +89,17 @@ const CronSchema = z.object({
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, {
       message: 'cron.name must be a safe identifier (alphanumeric, ".", "_", "-")',
     }),
-  // A cron expression ("45 5 * * 1-5") or the agent's shorthand ("30m",
-  // "every 2h"). Passed through to `hermes cron` verbatim; not parsed here.
-  schedule: z.string().min(1),
+  // A standard 5- or 6-field cron expression, e.g. "45 5 * * 1-5". Stored
+  // by hermes-agent verbatim as schedule.expr, so it round-trips exactly.
+  // Shorthand forms ("30m", "every 2h") are intentionally NOT accepted:
+  // hermes-agent normalises them ("every 2h" → "every 120m", "30m" → a
+  // one-shot relative timestamp), so reconciliation could never compare
+  // them reliably and would thrash or reschedule one-shot jobs.
+  schedule: z
+    .string()
+    .regex(/^\s*\S+(?:\s+\S+){4,5}\s*$/, {
+      message: 'cron.schedule must be a 5- or 6-field cron expression (e.g. "45 5 * * 1-5"); shorthand like "30m" is not supported',
+    }),
   prompt: z.string().min(1).optional(),
   // Skills to attach (assembled into the run context by the agent).
   skills: z.array(z.string().min(1)).default([]),

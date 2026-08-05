@@ -40,11 +40,20 @@ interface RawBoxJob {
   // bare string too so the parser is robust to format drift.
   schedule?: { expr?: string } | string | null;
   schedule_display?: string | null;
+  // repeat is stored as { times, completed }; `times` is the declared count.
+  repeat?: { times?: number | null } | number | null;
+  script?: string | null;
+  workdir?: string | null;
 }
 
 function scheduleOf(j: RawBoxJob): string {
   if (typeof j.schedule === 'string') return j.schedule;
   return j.schedule?.expr ?? j.schedule_display ?? '';
+}
+
+function repeatOf(j: RawBoxJob): number | undefined {
+  if (typeof j.repeat === 'number') return j.repeat;
+  return j.repeat?.times ?? undefined;
 }
 
 /**
@@ -71,6 +80,9 @@ export async function readBoxCrons(session: SshSession): Promise<BoxCron[]> {
       skills: j.skills ?? [],
       deliver: j.deliver ?? undefined,
       enabled: j.enabled !== false,
+      repeat: repeatOf(j),
+      script: j.script ?? undefined,
+      workdir: j.workdir ?? undefined,
     }));
 }
 
@@ -97,6 +109,9 @@ function editCmd(hermesBin: string, id: string, c: CronConfig, changed: string[]
     else for (const s of c.skills) parts.push('--skill', shq(s));
     any = true;
   }
+  if (changed.includes('repeat')) { parts.push('--repeat', String(c.repeat ?? 0)); any = true; }
+  if (changed.includes('script')) { parts.push('--script', shq(c.script ?? '')); any = true; }
+  if (changed.includes('workdir')) { parts.push('--workdir', shq(c.workdir ?? '')); any = true; }
   return any ? parts.join(' ') : null;
 }
 

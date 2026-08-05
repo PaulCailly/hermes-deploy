@@ -69,7 +69,7 @@ fields drift, and **deletes jobs on the box that are no longer declared here**.
 ```toml
 [[hermes.cron]]
 name     = "notion-triage"
-schedule = "0 6 * * 1-5"          # cron expr, or a shorthand like "30m" / "every 2h"
+schedule = "0 6 * * 1-5"          # a 5- or 6-field cron expression
 prompt   = "Run one notion-triage pass and post the board digest."
 skills   = ["release-manager"]     # optional; attached to the run
 deliver  = "discord:1040693401420570704"  # origin|local|telegram|discord|signal|platform:chat_id
@@ -79,7 +79,7 @@ enabled  = true                    # optional, default true (false = created but
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `name` | string | yes | — | Stable, unique reconciliation key. Safe identifier (alnum, `.`, `_`, `-`). |
-| `schedule` | string | yes | — | Cron expression or the agent's shorthand. Passed through verbatim. |
+| `schedule` | string | yes | — | A 5- or 6-field cron expression (e.g. `45 5 * * 1-5`). Shorthand like `30m` is rejected — hermes-agent normalises it, which would break reconciliation. |
 | `prompt` | string | no | — | The task/prompt run on each fire. |
 | `skills` | string[] | no | `[]` | Skills to attach to the run. |
 | `deliver` | string | no | — | Delivery target for the job's output. |

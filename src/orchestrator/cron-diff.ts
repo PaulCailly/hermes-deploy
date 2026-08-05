@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { CronConfig } from '../schema/hermes-toml.js';
 
 /**
@@ -16,6 +15,9 @@ export interface BoxCron {
   skills: string[];
   deliver?: string;
   enabled: boolean;
+  repeat?: number;
+  script?: string;
+  workdir?: string;
 }
 
 /** An edit to an existing job, with the specific fields that drifted. */
@@ -23,7 +25,7 @@ export interface CronEdit {
   id: string;
   name: string;
   declared: CronConfig;
-  /** Which declarative fields differ (for logging). */
+  /** Which declarative fields differ (for logging + the edit command). */
   changed: string[];
 }
 
@@ -33,13 +35,14 @@ export interface CronPlan {
   removes: { id: string; name: string }[];
 }
 
-function sortedSkills(skills: string[] | undefined): string[] {
-  return [...(skills ?? [])].sort();
-}
-
+/**
+ * Ordered skill comparison. hermes-agent loads a job's skills in order, so
+ * reordering is a real behavioural change — this is deliberately NOT a set
+ * comparison.
+ */
 function skillsDiffer(a: string[] | undefined, b: string[] | undefined): boolean {
-  const sa = sortedSkills(a);
-  const sb = sortedSkills(b);
+  const sa = a ?? [];
+  const sb = b ?? [];
   if (sa.length !== sb.length) return true;
   return sa.some((s, i) => s !== sb[i]);
 }
@@ -58,6 +61,9 @@ export function cronFieldsChanged(declared: CronConfig, box: BoxCron): string[] 
   if ((declared.deliver ?? '') !== (box.deliver ?? '')) changed.push('deliver');
   if (skillsDiffer(declared.skills, box.skills)) changed.push('skills');
   if (declared.enabled !== box.enabled) changed.push('enabled');
+  if ((declared.repeat ?? null) !== (box.repeat ?? null)) changed.push('repeat');
+  if ((declared.script ?? '') !== (box.script ?? '')) changed.push('script');
+  if ((declared.workdir ?? '') !== (box.workdir ?? '')) changed.push('workdir');
   return changed;
 }
 
@@ -69,32 +75,35 @@ export function cronFieldsChanged(declared: CronConfig, box: BoxCron): string[] 
  *   - declared name on box, fields drifted → edit (with changed fields)
  *   - box name not declared                → remove (authoritative delete)
  *
- * Pure and deterministic: no I/O, no ordering surprises (results follow
- * the input order of `declared` for creates/edits and `current` for
- * removes).
+ * hermes-agent permits duplicate job names, so a declared name may map to
+ * more than one box job. That is handled deterministically: the FIRST box
+ * job (in box order) is reconciled, every additional same-name job is
+ * removed. Otherwise duplicates would silently keep firing.
+ *
+ * Pure and deterministic: removes follow `current` order, creates follow
+ * `declared` order.
  */
 export function diffCrons(declared: CronConfig[], current: BoxCron[]): CronPlan {
-  const byName = new Map<string, BoxCron>();
-  for (const c of current) byName.set(c.name, c);
-  const declaredNames = new Set(declared.map(d => d.name));
+  const declaredByName = new Map(declared.map(d => [d.name, d]));
+  const reconciled = new Set<string>();
 
-  const creates: CronConfig[] = [];
   const edits: CronEdit[] = [];
-  for (const d of declared) {
-    const box = byName.get(d.name);
-    if (!box) {
-      creates.push(d);
+  const removes: { id: string; name: string }[] = [];
+  for (const box of current) {
+    const d = declaredByName.get(box.name);
+    if (!d || reconciled.has(box.name)) {
+      // Undeclared name, or a duplicate of an already-reconciled name.
+      removes.push({ id: box.id, name: box.name });
       continue;
     }
+    reconciled.add(box.name);
     const changed = cronFieldsChanged(d, box);
     if (changed.length > 0) {
-      edits.push({ id: box.id, name: d.name, declared: d, changed });
+      edits.push({ id: box.id, name: box.name, declared: d, changed });
     }
   }
 
-  const removes = current
-    .filter(c => !declaredNames.has(c.name))
-    .map(c => ({ id: c.id, name: c.name }));
+  const creates = declared.filter(d => !reconciled.has(d.name));
 
   return { creates, edits, removes };
 }
@@ -102,27 +111,4 @@ export function diffCrons(declared: CronConfig[], current: BoxCron[]): CronPlan 
 /** True when the plan would change nothing on the box. */
 export function cronPlanIsEmpty(plan: CronPlan): boolean {
   return plan.creates.length === 0 && plan.edits.length === 0 && plan.removes.length === 0;
-}
-
-/**
- * Stable content hash of the declared cron set, for the deploy short-circuit
- * (`last_cron_hash` in state). Order-independent (sorted by name) and only
- * over declarative fields, so reordering or reformatting the toml does not
- * force a needless reconcile.
- */
-export function computeCronHash(crons: CronConfig[]): string {
-  const canon = [...crons]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(c => ({
-      name: c.name,
-      schedule: c.schedule,
-      prompt: c.prompt ?? '',
-      skills: [...c.skills].sort(),
-      deliver: c.deliver ?? '',
-      enabled: c.enabled,
-      repeat: c.repeat ?? null,
-      script: c.script ?? '',
-      workdir: c.workdir ?? '',
-    }));
-  return `sha256:${createHash('sha256').update(JSON.stringify(canon)).digest('hex')}`;
 }

@@ -79,4 +79,26 @@ name = "no-schedule"
 `);
     expect(r.success).toBe(false);
   });
+
+  it('rejects shorthand schedules (only cron expressions supported)', () => {
+    for (const bad of ['30m', 'every 2h']) {
+      const r = parse(base + `
+[[hermes.cron]]
+name = "shorthand"
+schedule = "${bad}"
+`);
+      expect(r.success, `schedule "${bad}" should be rejected`).toBe(false);
+    }
+  });
+
+  it('accepts 5- and 6-field cron expressions', () => {
+    for (const good of ['0 6 * * 1-5', '*/5 0 6 * * 1-5']) {
+      const r = parse(base + `
+[[hermes.cron]]
+name = "ok"
+schedule = "${good}"
+`);
+      expect(r.success, `schedule "${good}" should be accepted`).toBe(true);
+    }
+  });
 });

@@ -33,14 +33,6 @@ const BaseDeploymentSchema = z.object({
    * is safe).
    */
   last_nix_hash: z.string().min(1).default('sha256:unknown'),
-  /**
-   * Hash of the declared `[[hermes.cron]]` set (content-only, order-
-   * independent). Gates the cron reconciliation step — when unchanged,
-   * the deploy skips reading/diffing the box's jobs entirely. Defaults to
-   * "sha256:none" on read when absent; the first deploy after upgrade
-   * reconciles. Optional so pre-cron state.toml files parse unchanged.
-   */
-  last_cron_hash: z.string().min(1).optional(),
   ssh_key_path: z.string().min(1),
   age_key_path: z.string().min(1),
   health: HealthSchema,
