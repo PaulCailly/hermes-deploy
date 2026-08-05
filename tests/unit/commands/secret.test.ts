@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -120,5 +120,37 @@ secrets_file = "./secrets.env.enc"
     await secretRemove({ key: 'ephemeral' });
     const keys = await secretList({});
     expect(keys).not.toContain('ephemeral');
+  });
+
+  it('encrypts from a foreign cwd without leaking plaintext (P0 regression)', async () => {
+    // Reproduce the real-world condition: the CLI invoked from somewhere
+    // other than the project dir, resolving the deployment by --name.
+    process.chdir(configDir);
+    await secretSet({ key: 'stripe', value: 'rk_live_SUPER_SECRET', name: 'test' });
+
+    // Round-trips through real sops (config resolved despite foreign cwd).
+    expect(await secretGet({ key: 'stripe', name: 'test' })).toBe('rk_live_SUPER_SECRET');
+
+    // The tracked file is ciphertext, never plaintext.
+    const onDisk = readFileSync(join(projectDir, 'secrets.env.enc'), 'utf-8');
+    expect(onDisk).toContain('sops');
+    expect(onDisk).not.toContain('rk_live_SUPER_SECRET');
+    // No leftover temp files.
+    expect(existsSync(join(projectDir, `.hermes-deploy-secrets.${process.pid}.plain.tmp`))).toBe(false);
+  });
+
+  it('leaves the prior encrypted file intact when encryption fails (no plaintext leak)', async () => {
+    await secretSet({ key: 'keep', value: 'original-value' });
+    const before = readFileSync(join(projectDir, 'secrets.env.enc'), 'utf-8');
+
+    // Break sops config so the NEXT encrypt fails.
+    writeFileSync(join(projectDir, '.sops.yaml'), 'creation_rules: []\n');
+
+    await expect(secretSet({ key: 'leaky', value: 'must-not-leak' })).rejects.toThrow();
+
+    const after = readFileSync(join(projectDir, 'secrets.env.enc'), 'utf-8');
+    expect(after).toBe(before); // untouched
+    expect(after).not.toContain('must-not-leak'); // no plaintext leak
+    expect(after).toContain('sops'); // still encrypted
   });
 });

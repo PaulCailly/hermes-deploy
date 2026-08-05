@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, writeFileSync, renameSync, rmSync } from 'node:fs';
+import { join, basename } from 'node:path';
 import { resolveDeployment } from './resolve.js';
 import { StateStore } from '../state/store.js';
 import { getStatePaths } from '../state/paths.js';
@@ -60,9 +60,12 @@ async function getContext(name?: string, projectPath?: string): Promise<SecretCo
   };
 }
 
-function runSops(args: string[], ageKeyFile: string): string {
+function runSops(args: string[], ageKeyFile: string, cwd?: string): string {
   const result = spawnSync('sops', args, {
     encoding: 'utf-8',
+    // Run from the project dir so sops resolves the deployment's .sops.yaml
+    // (creation rules) regardless of the caller's cwd.
+    cwd,
     env: { ...process.env, SOPS_AGE_KEY_FILE: ageKeyFile },
   });
   if (result.status !== 0) {
@@ -101,17 +104,42 @@ async function readSecrets(ctx: SecretContext): Promise<Record<string, string>> 
   const decrypted = runSops(
     ['--decrypt', '--input-type', 'dotenv', '--output-type', 'dotenv', ctx.secretsPath],
     ctx.ageKeyPath,
+    ctx.projectDir,
   );
   return parseDotenv(decrypted);
 }
 
+/**
+ * Encrypt `data` and atomically replace secrets.env.enc. The plaintext is
+ * written only to a temp file (never to the tracked secrets path), and the
+ * real file is replaced only after sops succeeds. sops runs with
+ * cwd = projectDir and an explicit --filename-override so its creation
+ * rules resolve no matter where the CLI was invoked from. If encryption
+ * fails, the previous encrypted file is left intact and no plaintext leaks.
+ */
 function writeSecrets(ctx: SecretContext, data: Record<string, string>): void {
   const plain = stringifyDotenv(data);
-  writeFileSync(ctx.secretsPath, plain);
-  runSops(
-    ['--encrypt', '--input-type', 'dotenv', '--output-type', 'dotenv', '--in-place', ctx.secretsPath],
-    ctx.ageKeyPath,
-  );
+  const plainTmp = join(ctx.projectDir, `.hermes-deploy-secrets.${process.pid}.plain.tmp`);
+  const cipherTmp = `${ctx.secretsPath}.${process.pid}.tmp`;
+  try {
+    writeFileSync(plainTmp, plain, { mode: 0o600 });
+    const cipher = runSops(
+      [
+        '--encrypt',
+        '--filename-override', basename(ctx.secretsPath),
+        '--input-type', 'dotenv',
+        '--output-type', 'dotenv',
+        plainTmp,
+      ],
+      ctx.ageKeyPath,
+      ctx.projectDir,
+    );
+    writeFileSync(cipherTmp, cipher);
+    renameSync(cipherTmp, ctx.secretsPath);
+  } finally {
+    try { rmSync(plainTmp, { force: true }); } catch { /* best effort */ }
+    try { rmSync(cipherTmp, { force: true }); } catch { /* best effort */ }
+  }
 }
 
 export interface SecretRefOptions {
