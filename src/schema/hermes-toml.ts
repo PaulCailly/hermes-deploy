@@ -114,6 +114,35 @@ const CronSchema = z.object({
 
 export type CronConfig = z.infer<typeof CronSchema>;
 
+// [hermes.watchdog] — gateway-health watchdog (systemd oneshot + timer on
+// the box). The upstream module's Restart=always covers process crashes;
+// this covers the zombie case observed 2026-08-31: process alive but the
+// Discord gateway websocket stuck in discord.py's resume loop against a
+// dead session host (WSServerHandshakeError 503 forever, backoff ~15min).
+// The watchdog restarts hermes-agent when handshake failures appear in the
+// journal within `window_min`, at most once per `cooldown_min`. During a
+// real Discord outage restarts are bounded by the cooldown and guarantee
+// recovery at most one cooldown after Discord heals.
+const WatchdogSchema = z.object({
+  enabled: z.boolean().default(true),
+  // Timer cadence — how often the check runs.
+  interval_min: z.number().int().min(1).max(60).default(5),
+  // Journal lookback — a handshake failure within this window marks the
+  // gateway as stuck. Keep it >= the largest reconnect backoff (~17 min
+  // observed) divided by two, or sparse failures slip between checks.
+  window_min: z.number().int().min(1).max(120).default(15),
+  // Minimum gap between watchdog-initiated restarts.
+  cooldown_min: z.number().int().min(1).max(1440).default(30),
+}).refine(w => w.cooldown_min >= w.window_min, {
+  message:
+    'watchdog.cooldown_min must be >= window_min — the journal keeps pre-restart ' +
+    'handshake failures visible for window_min, so a shorter cooldown retriggers ' +
+    'an immediate second restart',
+  path: ['cooldown_min'],
+});
+
+export type WatchdogConfig = z.infer<typeof WatchdogSchema>;
+
 // [hermes] — pure infrastructure pointers + escape hatch.
 // hermes-deploy intentionally does NOT model the agent's config.yaml
 // schema. The user provides config.yaml directly; we upload it and
@@ -132,6 +161,8 @@ const HermesSchema = z
     // section — even as an empty array — opts into authoritative management,
     // where an empty array deletes every job on the box.
     cron: z.array(CronSchema).optional(),
+    // Optional: absence means no watchdog units are generated.
+    watchdog: WatchdogSchema.optional(),
   })
   .refine(
     h => {

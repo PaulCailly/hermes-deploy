@@ -61,7 +61,31 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   validateProjectFiles(deployment.project_path, config);
   reporter.phaseDone('validate');
 
-  // === Hash short-circuit — no changes means no work ===
+  // === Phase 2 — reconcile network rules in place ===
+  // Runs BEFORE the hash short-circuit: the config hash covers project
+  // files, not the auto-resolved public IP. With ssh_allowed_from =
+  // "auto", the SG rule silently goes stale whenever the operator's IP
+  // changes — a no-op update must still heal SSH ingress (observed
+  // 2026-09-01: jarvis unreachable behind an SG pinned to an old IP).
+  // reconcileNetwork is idempotent (one Describe when nothing drifted).
+  reporter.phaseStart('provision', 'Reconciling network rules');
+  const sshAllowedFrom =
+    config.network.ssh_allowed_from === 'auto'
+      ? await opts.detectPublicIp()
+      : config.network.ssh_allowed_from;
+  const rules: NetworkRules = {
+    sshAllowedFrom,
+    inboundPorts: config.network.inbound_ports,
+    hasDomain: !!config.domain,
+  };
+  const ledger: ResourceLedger =
+    deployment.cloud === 'aws'
+      ? { kind: 'aws', resources: { ...deployment.cloud_resources } }
+      : { kind: 'gcp', resources: { ...deployment.cloud_resources } };
+  await opts.provider.reconcileNetwork(ledger, rules);
+  reporter.phaseDone('provision');
+
+  // === Hash short-circuit — no changes means no further work ===
   const documentPaths = Object.values(config.hermes.documents).map(p =>
     pathResolve(deployment.project_path, p),
   );
@@ -93,24 +117,6 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
       skipped: true,
     };
   }
-
-  // === Phase 2 — reconcile network rules in place ===
-  reporter.phaseStart('provision', 'Reconciling network rules');
-  const sshAllowedFrom =
-    config.network.ssh_allowed_from === 'auto'
-      ? await opts.detectPublicIp()
-      : config.network.ssh_allowed_from;
-  const rules: NetworkRules = {
-    sshAllowedFrom,
-    inboundPorts: config.network.inbound_ports,
-    hasDomain: !!config.domain,
-  };
-  const ledger: ResourceLedger =
-    deployment.cloud === 'aws'
-      ? { kind: 'aws', resources: { ...deployment.cloud_resources } }
-      : { kind: 'gcp', resources: { ...deployment.cloud_resources } };
-  await opts.provider.reconcileNetwork(ledger, rules);
-  reporter.phaseDone('provision');
 
   // === Domain DNS reconciliation ===
   if (config.domain && opts.provider.upsertDnsRecord) {

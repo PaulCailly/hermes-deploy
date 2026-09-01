@@ -60,6 +60,44 @@ export function generateHermesNix(config: HermesTomlConfig): string {
   }
 
   lines.push('  };');
+
+  const watchdog = config.hermes.watchdog;
+  if (watchdog?.enabled) {
+    const cooldownSecs = watchdog.cooldown_min * 60;
+    lines.push('');
+    lines.push('  # --- Gateway watchdog ([hermes.watchdog]) ---');
+    lines.push('  # Covers the zombie case Restart=always cannot see: the hermes-agent');
+    lines.push('  # process alive but the Discord websocket stuck in discord.py\'s resume');
+    lines.push('  # loop (WSServerHandshakeError against a dead session gateway host,');
+    lines.push('  # observed 2026-08-31). Restarts the service when handshake failures');
+    lines.push('  # appear in the journal, at most once per cooldown.');
+    lines.push('  systemd.services.hermes-gateway-watchdog = {');
+    lines.push('    description = "Restart hermes-agent when the Discord gateway websocket is stuck";');
+    lines.push('    serviceConfig.Type = "oneshot";');
+    lines.push('    path = [ pkgs.systemd pkgs.gnugrep pkgs.coreutils ];');
+    lines.push("    script = ''");
+    lines.push('      systemctl is-active --quiet hermes-agent || exit 0');
+    lines.push('      stamp=/run/hermes-gateway-watchdog.last-restart');
+    lines.push('      now=$(date +%s)');
+    lines.push('      if [ -f "$stamp" ] && [ $(( now - $(stat -c %Y "$stamp") )) -lt ' + cooldownSecs + ' ]; then');
+    lines.push('        exit 0');
+    lines.push('      fi');
+    lines.push('      if journalctl -u hermes-agent --since "-' + watchdog.window_min + 'min" --no-pager -q | grep -q "WSServerHandshakeError"; then');
+    lines.push('        echo "gateway handshake failures within ' + watchdog.window_min + 'min — restarting hermes-agent"');
+    lines.push('        touch "$stamp"');
+    lines.push('        systemctl restart hermes-agent');
+    lines.push('      fi');
+    lines.push("    '';");
+    lines.push('  };');
+    lines.push('  systemd.timers.hermes-gateway-watchdog = {');
+    lines.push('    wantedBy = [ "timers.target" ];');
+    lines.push('    timerConfig = {');
+    lines.push('      OnBootSec = "' + watchdog.interval_min + 'min";');
+    lines.push('      OnUnitActiveSec = "' + watchdog.interval_min + 'min";');
+    lines.push('    };');
+    lines.push('  };');
+  }
+
   lines.push('');
   lines.push('  # Restart hermes-agent whenever sops-nix re-decrypts the secrets file.');
   lines.push('  # Without this, `secret set` + `update` re-decrypts the file on disk');

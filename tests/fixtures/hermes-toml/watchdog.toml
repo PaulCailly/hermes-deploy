@@ -1,0 +1,16 @@
+name = "watchdog-box"
+
+[cloud]
+provider = "aws"
+profile  = "default"
+region   = "eu-west-3"
+size     = "large"
+
+[hermes]
+config_file  = "./config.yaml"
+secrets_file = "./secrets.env.enc"
+
+[hermes.watchdog]
+interval_min = 5
+window_min = 15
+cooldown_min = 30

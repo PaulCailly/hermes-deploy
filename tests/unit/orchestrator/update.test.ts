@@ -137,7 +137,7 @@ secrets_file = "./secrets.env.enc"
     expect(provider.reconcileNetwork).toHaveBeenCalledTimes(1);
   });
 
-  it('short-circuits (no SSH, no reconcile) when the config hash has not changed', async () => {
+  it('short-circuits the rebuild (no SSH) but still reconciles network when the config hash has not changed', async () => {
     // Pre-populate state's last_config_hash with what the update will compute
     const store = new StateStore(getStatePaths());
     const currentHash = computeConfigHash(
@@ -166,7 +166,11 @@ secrets_file = "./secrets.env.enc"
 
     expect(result.skipped).toBe(true);
     expect(sessionFactory).not.toHaveBeenCalled();
-    expect(provider.reconcileNetwork).not.toHaveBeenCalled();
+    // The config hash covers project files, not the auto-resolved public
+    // IP — a no-op update must still heal a stale SSH ingress rule.
+    expect(provider.reconcileNetwork).toHaveBeenCalledTimes(1);
+    const [, rules] = vi.mocked(provider.reconcileNetwork).mock.calls[0]!;
+    expect(rules).toMatchObject({ sshAllowedFrom: '203.0.113.1/32' });
   });
 
   it('skips nixos-rebuild (but runs reconcileNetwork) when only network rules changed', async () => {

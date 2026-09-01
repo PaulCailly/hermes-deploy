@@ -26,6 +26,41 @@ describe('generateHermesNix (M3)', () => {
     );
   });
 
+  it('matches the snapshot for a config with [hermes.watchdog]', async () => {
+    const config = loadHermesToml(join(fixturesDir, 'hermes-toml/watchdog.toml'));
+    const got = generateHermesNix(config);
+    await expect(got).toMatchFileSnapshot(
+      join(fixturesDir, 'nix-snapshots/watchdog.hermes.nix'),
+    );
+  });
+
+  it('emits a watchdog oneshot service and timer wired to the configured values', () => {
+    const config = loadHermesToml(join(fixturesDir, 'hermes-toml/watchdog.toml'));
+    const out = generateHermesNix(config);
+    expect(out).toContain('systemd.services.hermes-gateway-watchdog');
+    expect(out).toContain('systemd.timers.hermes-gateway-watchdog');
+    expect(out).toContain('WSServerHandshakeError');
+    expect(out).toContain('--since "-15min"');
+    expect(out).toContain('OnUnitActiveSec = "5min"');
+    expect(out).toContain('1800'); // cooldown_min = 30 → seconds
+    expect(out).toContain('systemctl restart hermes-agent');
+  });
+
+  it('emits no watchdog units when the section is absent or disabled', () => {
+    const minimal = loadHermesToml(join(fixturesDir, 'hermes-toml/m3-minimal.toml'));
+    expect(generateHermesNix(minimal)).not.toContain('hermes-gateway-watchdog');
+
+    const config = loadHermesToml(join(fixturesDir, 'hermes-toml/watchdog.toml'));
+    const disabled = {
+      ...config,
+      hermes: {
+        ...config.hermes,
+        watchdog: { ...config.hermes.watchdog!, enabled: false },
+      },
+    };
+    expect(generateHermesNix(disabled)).not.toContain('hermes-gateway-watchdog');
+  });
+
   it('throws on a documents key with characters invalid in a Nix path literal', () => {
     expect(() => generateHermesNix({
       name: 'x',
