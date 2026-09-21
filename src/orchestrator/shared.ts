@@ -178,6 +178,61 @@ export interface HealthcheckArgs {
  * Returns 'healthy' | 'unhealthy'. Caller decides what to do with the
  * unhealthy case (deploy returns it; update logs it).
  */
+/**
+ * Canonical serialization of every hermes.toml field that reaches the
+ * generated Nix WITHOUT being one of the hashed files themselves:
+ *   - [domain] → configuration.nix (nginx/ACME)
+ *   - [hermes] environment / documents keys / watchdog → hermes.nix
+ *     (documents VALUES are hashed as files; the KEYS — the on-box
+ *     filenames — only live in this serialization)
+ *   - [hermes.cachix] → configuration.nix (nix.settings substituter)
+ * [hermes.cron] is deliberately excluded: it is reconciled directly on
+ * the box (see reconcileCrons), without a nixos-rebuild.
+ *
+ * Used by BOTH the writer (recordConfigAndHealthcheck → last_nix_hash)
+ * and the reader (runUpdate's network-only short-circuit). Keeping one
+ * implementation is the point: the two hashes must never drift apart.
+ */
+export function computeNixRelevantExtra(config: HermesTomlConfig): string {
+  return JSON.stringify({
+    domain: config.domain
+      ? { name: config.domain.name, upstream_port: config.domain.upstream_port }
+      : null,
+    environment: config.hermes.environment,
+    documents: Object.keys(config.hermes.documents)
+      .sort()
+      .reduce<Record<string, string>>((acc, k) => {
+        const v = config.hermes.documents[k];
+        if (v !== undefined) acc[k] = v;
+        return acc;
+      }, {}),
+    cachix: config.hermes.cachix ?? null,
+    watchdog: config.hermes.watchdog ?? null,
+  });
+}
+
+/**
+ * The "nix-relevant" hash: contents of config_file, secrets_file,
+ * nix_extra and every document file, plus computeNixRelevantExtra.
+ * Stored as last_nix_hash after a successful rebuild and compared by
+ * runUpdate to decide whether nixos-rebuild can be skipped.
+ */
+export function computeNixHash(projectDir: string, config: HermesTomlConfig): string {
+  const documentPaths = Object.values(config.hermes.documents).map(p =>
+    pathResolve(projectDir, p),
+  );
+  return computeConfigHash(
+    [
+      pathResolve(projectDir, config.hermes.config_file),
+      pathResolve(projectDir, config.hermes.secrets_file),
+      config.hermes.nix_extra ? pathResolve(projectDir, config.hermes.nix_extra) : '',
+      ...documentPaths,
+    ].filter(Boolean),
+    true,
+    computeNixRelevantExtra(config),
+  );
+}
+
 export async function recordConfigAndHealthcheck(
   args: HealthcheckArgs,
 ): Promise<{ health: 'healthy' | 'unhealthy'; journalTail: string[] }> {
@@ -202,21 +257,9 @@ export async function recordConfigAndHealthcheck(
 
   // Nix-only hash (excludes hermes.toml) — used by the network-only
   // optimization in runUpdate to skip nixos-rebuild when only network
-  // rules changed. Includes serialized domain config because [domain]
-  // affects the generated configuration.nix (nginx/ACME).
-  const domainExtra = config.domain
-    ? JSON.stringify({ name: config.domain.name, upstream_port: config.domain.upstream_port })
-    : '';
-  const nixHash = computeConfigHash(
-    [
-      pathResolve(projectDir, config.hermes.config_file),
-      pathResolve(projectDir, config.hermes.secrets_file),
-      config.hermes.nix_extra ? pathResolve(projectDir, config.hermes.nix_extra) : '',
-      ...documentPaths,
-    ].filter(Boolean),
-    true,
-    domainExtra,
-  );
+  // rules changed. MUST be computed identically to runUpdate's comparison
+  // hash — both call the shared computeNixHash helper below.
+  const nixHash = computeNixHash(projectDir, config);
 
   await store.update(state => {
     const d = state.deployments[deploymentName]!;

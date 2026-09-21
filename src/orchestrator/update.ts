@@ -5,7 +5,7 @@ import { StateStore } from '../state/store.js';
 import { getStatePaths } from '../state/paths.js';
 import { computeConfigHash } from '../state/hash.js';
 import { createPlainReporter, type Reporter } from './reporter.js';
-import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles, uploadProfileFiles, computeProfileHash } from './shared.js';
+import { uploadAndRebuild, recordConfigAndHealthcheck, validateProjectFiles, uploadProfileFiles, computeProfileHash, computeNixHash } from './shared.js';
 import { reconcileCrons } from '../remote-ops/cron.js';
 import type { CloudProvider, NetworkRules, ResourceLedger } from '../cloud/core.js';
 import type { SshSession } from '../remote-ops/session.js';
@@ -182,31 +182,16 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   }
 
   // === Network-only optimization ===
-  // If the nix-relevant files (config_file, secrets_file, nix_extra,
-  // documents) haven't changed since the last successful rebuild, the
-  // network reconciliation above was all that was needed. Skip the
-  // expensive SSH + nixos-rebuild step.
-  // Include domain config as extra data in the nix hash because [domain]
-  // affects the generated configuration.nix (nginx/ACME). Without this,
-  // changing upstream_port or adding/removing [domain] would skip
-  // nixos-rebuild. We serialize just the domain config rather than
-  // including the full hermes.toml, so network-only changes (like
-  // ssh_allowed_from) still skip the rebuild correctly.
-  const domainExtra = config.domain
-    ? JSON.stringify({ name: config.domain.name, upstream_port: config.domain.upstream_port })
-    : '';
-  const nixHash = computeConfigHash(
-    [
-      pathResolve(deployment.project_path, config.hermes.config_file),
-      pathResolve(deployment.project_path, config.hermes.secrets_file),
-      config.hermes.nix_extra
-        ? pathResolve(deployment.project_path, config.hermes.nix_extra)
-        : '',
-      ...documentPaths,
-    ].filter(Boolean),
-    true,
-    domainExtra,
-  );
+  // If the nix-relevant inputs haven't changed since the last successful
+  // rebuild, the network reconciliation above was all that was needed.
+  // Skip the expensive SSH + nixos-rebuild step. computeNixHash covers
+  // the config/secrets/nix_extra/document file contents AND every
+  // hermes.toml field that reaches the generated Nix (environment,
+  // document keys, watchdog, cachix, domain) — see shared.ts. It must
+  // stay in sync with the writer in recordConfigAndHealthcheck, which is
+  // why both call the same helper (fixes env-only edits silently
+  // skipping the rebuild, seen 2026-09-15 with TELEGRAM_ALLOWED_USERS).
+  const nixHash = computeNixHash(deployment.project_path, config);
   if (nixHash === deployment.last_nix_hash) {
     // Nix config unchanged — skip nixos-rebuild. But still sync profiles
     // if any profile files changed (profiles don't affect NixOS config).

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,6 +9,8 @@ vi.mock('../../../src/remote-ops/nixos-rebuild.js', () => ({
 }));
 
 import { runUpdate } from '../../../src/orchestrator/update.js';
+import { computeNixHash } from '../../../src/orchestrator/shared.js';
+import { loadHermesToml } from '../../../src/schema/load.js';
 import type { CloudProvider } from '../../../src/cloud/core.js';
 import type { SshSession } from '../../../src/remote-ops/session.js';
 import { StateStore } from '../../../src/state/store.js';
@@ -175,19 +177,13 @@ secrets_file = "./secrets.env.enc"
 
   it('skips nixos-rebuild (but runs reconcileNetwork) when only network rules changed', async () => {
     // Pre-populate last_nix_hash with what a rebuild would store — the
-    // hash of the nix-relevant files only (no hermes.toml). Then change
-    // hermes.toml by updating inbound_ports — the full config hash
-    // changes, so the no-op check at the top does NOT fire and
-    // reconcileNetwork runs. But the nix files are untouched so the
-    // network-only short-circuit should fire and skip SSH + rebuild.
-    const nixHash = computeConfigHash(
-      [
-        join(projectDir, 'config.yaml'),
-        join(projectDir, 'secrets.env.enc'),
-        join(projectDir, 'SOUL.md'),
-      ],
-      true,
-    );
+    // shared nix-relevant hash (nix files + hermes.toml fields that reach
+    // the generated Nix). Then change hermes.toml by updating inbound_ports
+    // — a network-only change: the full config hash changes, so the no-op
+    // check at the top does NOT fire and reconcileNetwork runs, but the
+    // nix-relevant inputs are untouched so the short-circuit should fire
+    // and skip SSH + rebuild.
+    const nixHash = computeNixHash(projectDir, loadHermesToml(join(projectDir, 'hermes.toml')));
     const store = new StateStore(getStatePaths());
     await store.update(state => {
       state.deployments['test']!.last_nix_hash = nixHash;
@@ -209,6 +205,50 @@ secrets_file = "./secrets.env.enc"
     expect(provider.reconcileNetwork).toHaveBeenCalledTimes(1);
     // No SSH session should have been opened.
     expect(sessionFactory).not.toHaveBeenCalled();
+    expect(result.skipped).toBe(false);
+    expect(result.health).toBe('healthy');
+  });
+
+  it('rebuilds when only [hermes.environment] changed (regression: env-only edits silently skipped)', async () => {
+    // Regression for 2026-09-15: TELEGRAM_ALLOWED_USERS was edited in
+    // [hermes.environment]; update's nix hash covered only file contents,
+    // matched last_nix_hash, and the rebuild — and the env change — was
+    // silently skipped. The nix hash must cover the serialized hermes
+    // section, so an env-only change must reach the rebuild.
+    const store = new StateStore(getStatePaths());
+    await store.update(state => {
+      state.deployments['test']!.last_nix_hash = computeNixHash(
+        projectDir,
+        loadHermesToml(join(projectDir, 'hermes.toml')),
+      );
+      // last_config_hash stays stale ('sha256:old') so the top-level
+      // no-op check does not fire.
+    });
+
+    // The env-only edit: nothing else in the project changes.
+    const toml = readFileSync(join(projectDir, 'hermes.toml'), 'utf-8');
+    writeFileSync(
+      join(projectDir, 'hermes.toml'),
+      toml.replace(
+        '[hermes.documents]',
+        '[hermes.environment]\nTELEGRAM_ALLOWED_USERS = "111,222"\n\n[hermes.documents]',
+      ),
+    );
+
+    const provider = fakeProvider();
+    const sessionFactory = vi.fn(async () => healthySession());
+
+    const result = await runUpdate({
+      deploymentName: 'test',
+      provider,
+      sessionFactory,
+      detectPublicIp: async () => '203.0.113.1/32',
+      healthcheckTimeoutMs: 500,
+    });
+
+    // The env change must NOT be treated as a network-only no-op: the
+    // bootstrap (SSH + rebuild) has to run.
+    expect(sessionFactory).toHaveBeenCalled();
     expect(result.skipped).toBe(false);
     expect(result.health).toBe('healthy');
   });
