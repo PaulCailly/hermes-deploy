@@ -17,6 +17,13 @@ export interface UpdateOptions {
   detectPublicIp: () => Promise<string>;
   healthcheckTimeoutMs?: number;
   reporter?: Reporter;
+  /**
+   * Leave security-group / firewall rules as they are. For CI runners:
+   * with ssh_allowed_from = "auto", reconciling would pin SSH to the
+   * runner's IP and revoke the operator's. The caller is responsible
+   * for opening SSH to itself for the duration of the update.
+   */
+  skipNetwork?: boolean;
 }
 
 export interface UpdateResult {
@@ -68,22 +75,24 @@ export async function runUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   // changes — a no-op update must still heal SSH ingress (observed
   // 2026-09-01: jarvis unreachable behind an SG pinned to an old IP).
   // reconcileNetwork is idempotent (one Describe when nothing drifted).
-  reporter.phaseStart('provision', 'Reconciling network rules');
-  const sshAllowedFrom =
-    config.network.ssh_allowed_from === 'auto'
-      ? await opts.detectPublicIp()
-      : config.network.ssh_allowed_from;
-  const rules: NetworkRules = {
-    sshAllowedFrom,
-    inboundPorts: config.network.inbound_ports,
-    hasDomain: !!config.domain,
-  };
-  const ledger: ResourceLedger =
-    deployment.cloud === 'aws'
-      ? { kind: 'aws', resources: { ...deployment.cloud_resources } }
-      : { kind: 'gcp', resources: { ...deployment.cloud_resources } };
-  await opts.provider.reconcileNetwork(ledger, rules);
-  reporter.phaseDone('provision');
+  if (!opts.skipNetwork) {
+    reporter.phaseStart('provision', 'Reconciling network rules');
+    const sshAllowedFrom =
+      config.network.ssh_allowed_from === 'auto'
+        ? await opts.detectPublicIp()
+        : config.network.ssh_allowed_from;
+    const rules: NetworkRules = {
+      sshAllowedFrom,
+      inboundPorts: config.network.inbound_ports,
+      hasDomain: !!config.domain,
+    };
+    const ledger: ResourceLedger =
+      deployment.cloud === 'aws'
+        ? { kind: 'aws', resources: { ...deployment.cloud_resources } }
+        : { kind: 'gcp', resources: { ...deployment.cloud_resources } };
+    await opts.provider.reconcileNetwork(ledger, rules);
+    reporter.phaseDone('provision');
+  }
 
   // === Hash short-circuit — no changes means no further work ===
   const documentPaths = Object.values(config.hermes.documents).map(p =>

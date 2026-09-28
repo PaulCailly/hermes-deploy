@@ -12,6 +12,7 @@ import { createPlainReporter } from '../orchestrator/reporter.js';
 export interface UpdateCommandOptions {
   name?: string;
   projectPath?: string;
+  skipNetwork?: boolean;
 }
 
 export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
@@ -46,7 +47,11 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
       createSshSession({ host, username: 'root', privateKey }),
     detectPublicIp: () => detectPublicIp(),
     reporter,
+    skipNetwork: opts.skipNetwork,
   });
 
   if (result.health === 'unhealthy') process.exit(1);
+  // Open SSH handles keep the event loop alive after a successful update;
+  // exit explicitly so scripted callers (CI) don't hang.
+  process.exit(0);
 }
