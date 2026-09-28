@@ -139,6 +139,23 @@ secrets_file = "./secrets.env.enc"
     expect(provider.reconcileNetwork).toHaveBeenCalledTimes(1);
   });
 
+  it('leaves network rules untouched with skipNetwork (CI runner must not revoke the operator IP)', async () => {
+    const provider = fakeProvider();
+    const detectPublicIp = vi.fn(async () => '203.0.113.1/32');
+    const result = await runUpdate({
+      deploymentName: 'test',
+      provider,
+      sessionFactory: async () => healthySession(),
+      detectPublicIp,
+      healthcheckTimeoutMs: 500,
+      skipNetwork: true,
+    });
+
+    expect(result.health).toBe('healthy');
+    expect(provider.reconcileNetwork).not.toHaveBeenCalled();
+    expect(detectPublicIp).not.toHaveBeenCalled();
+  });
+
   it('short-circuits the rebuild (no SSH) but still reconciles network when the config hash has not changed', async () => {
     // Pre-populate state's last_config_hash with what the update will compute
     const store = new StateStore(getStatePaths());

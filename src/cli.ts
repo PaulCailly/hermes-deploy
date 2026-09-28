@@ -63,10 +63,15 @@ program
   .argument('[name]', 'deployment name (defaults to the name in ./hermes.toml)')
   .option('--name <name>', 'deployment name (use instead of cwd lookup)')
   .option('--project <path>', 'project directory (use instead of cwd lookup)')
+  .option('--skip-network', 'leave firewall rules untouched (CI: caller opens SSH itself)')
   .description('Push config changes to an existing deployment (skips provisioning)')
   .action(async (positionalName, opts) => {
     try {
-      await updateCommand({ name: opts.name ?? positionalName, projectPath: opts.project });
+      await updateCommand({
+        name: opts.name ?? positionalName,
+        projectPath: opts.project,
+        skipNetwork: opts.skipNetwork,
+      });
     } catch (e) {
       console.error(`hermes-deploy update: ${(e as Error).message}`);
       process.exit(1);
